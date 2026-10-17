@@ -1,0 +1,7 @@
+* text=auto
+*.sh text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+app/src/main/res/raw/privacy_policy.txt text eol=lf
+*.jar binary
+*.mp4 binary

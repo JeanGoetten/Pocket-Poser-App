@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="description" content="Pocket Poser is an experimental Android application for video-based 3D skeletal pose data.">
+<title>Pocket Poser — Android pose viewer</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#19232e;background:#f6f7f9;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0;line-height:1.6}a{color:#124b79}a:hover{text-decoration-thickness:2px}h1,h2,h3{line-height:1.2;letter-spacing:-.025em}h1{font-size:clamp(2.2rem,5vw,4rem);margin:.2em 0 .4em}h2{font-size:1.6rem;margin:0 0 1rem}h3{font-size:1.05rem;margin:.5rem 0}p{margin:.4em 0 1em}.container{width:min(1100px,calc(100% - 36px));margin:auto}header{background:#fff;border-bottom:1px solid #e2e7ed;padding:22px 0}header .bar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:1.4rem;font-weight:700;color:#202934;letter-spacing:-.04em}.nav{display:flex;gap:20px;flex-wrap:wrap}.nav a{font-size:.91rem;text-decoration:none}.tech-icons{margin-top:18px;padding-top:13px;border-top:1px solid #edf0f3;display:flex;gap:18px;flex-wrap:wrap;align-items:center}.tech-icons img{width:24px;height:24px;opacity:.73}.tech-icons span{font-size:.77rem;color:#646f79}.hero{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center;padding:70px 0 55px}.eyebrow{font-size:.78rem;text-transform:uppercase;letter-spacing:.09em;color:#627180;font-weight:600}.hero p{max-width:510px;color:#505b67;font-size:1.04rem}.image{background:#fff;border:1px solid #e2e7ed;border-radius:18px;padding:17px}.image img{display:block;width:100%;border-radius:9px;max-height:460px;object-fit:contain}.image figcaption{font-size:.74rem;color:#707780;margin-top:10px}.actions{display:flex;gap:11px;align-items:center;flex-wrap:wrap;margin-top:22px}.button{display:inline-block;padding:11px 16px;background:#214e74;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.92rem}.button.secondary{background:#fff;color:#214e74;border:1px solid #bfcdd7}.button[aria-disabled=true]{background:#d9dfe5;color:#54606c;cursor:not-allowed;pointer-events:none}.small{font-size:.79rem;color:#6c7681}.section{padding:46px 0;border-top:1px solid #e1e7eb}.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.step{border:1px solid #e1e6ec;background:#fff;border-radius:13px;padding:18px}.step .visual{height:115px;display:flex;align-items:center;justify-content:center;background:#f0f4f7;border-radius:9px;color:#1d4c70;margin-bottom:12px}.step svg{width:88px;height:88px;stroke:currentColor;fill:none;stroke-width:2}.step .visual img{object-fit:contain;max-width:100%;max-height:104px}.step p{font-size:.85rem;color:#606b76}.step .num{font-size:.73rem;color:#6c8091}.guides{display:grid;grid-template-columns:1fr 1fr;gap:20px}.panel{background:#fff;border:1px solid #e1e6ec;border-radius:12px;padding:24px;min-width:0}.panel ol{padding-left:23px}.panel li{padding:4px 0}pre{background:#f1f4f8;border:1px solid #e1e7ed;border-radius:7px;padding:12px;font-size:.79rem;line-height:1.6;overflow:auto;white-space:pre-wrap;word-break:break-word}.limitations p{color:#52606b}.footer{border-top:1px solid #dce3e9;padding:26px 0 45px;color:#65707b;font-size:.82rem}.footer a{margin-right:18px}@media(max-width:780px){.hero{grid-template-columns:1fr;gap:22px;padding:38px 0}.steps{grid-template-columns:repeat(2,1fr)}.guides{grid-template-columns:1fr}}@media(max-width:430px){.steps{grid-template-columns:1fr}.tech-icons{gap:14px}}
+</style>
+</head>
+<body>
+<header><div class="container"><div class="bar"><div class="brand">Pocket Poser</div>
+<nav class="nav" aria-label="Sections"><a href="#process">Process</a><a href="#install">Install and build</a><a href="#limitations">Notes</a><a href="https://github.com/JeanGoetten/Pocket-Poser-App">GitHub</a></nav></div>
+<div class="tech-icons" aria-label="Technologies used">
+<img src="assets/icons/android.svg" alt="Android" title="Android"><img src="assets/icons/kotlin.svg" alt="Kotlin" title="Kotlin">
+<img src="assets/icons/jetpackcompose.svg" alt="Jetpack Compose" title="Jetpack Compose">
+<img src="assets/icons/opencv.svg" alt="OpenCV" title="OpenCV">
+<img src="assets/icons/gradle.svg" alt="Gradle" title="Gradle"><img src="assets/icons/nvidia.svg" alt="NVIDIA" title="NVIDIA Body Pose service">
+<span>Android · Kotlin · Compose · OpenCV · Gradle · NVIDIA Body Pose</span></div></div></header>
+<main class="container">
+<section class="hero">
+<div><div class="eyebrow">Experimental Android application</div>
+<h1>Pocket Poser</h1>
+<p>Import a video or record one using the device camera. Review the segment and focus area, prepare the video, inspect the resulting Nova-77 pose sequence in 3D, and export pose data.</p>
+<div class="actions"><a id="download" class="button" aria-disabled="true">APK not available</a><a class="button secondary" href="https://github.com/JeanGoetten/Pocket-Poser-App">Source repository</a></div>
+<p id="release-status" class="small" role="status">No public APK has been approved yet.</p>
+</div><figure class="image"><img src="assets/pose-preview.png" alt="Synthetic Nova-77 skeletal pose preview from Pocket Poser">
+<figcaption>Actual Pocket Poser preview using synthetic pose data. No personal footage is shown.</figcaption></figure></section>
+<section class="section" id="process"><h2>Processing sequence</h2><div class="steps">
+<article class="step"><div class="visual"><svg viewBox="0 0 90 90" aria-hidden="true"><rect x="12" y="18" width="66" height="52" rx="8"/><path d="m39 33 21 11-21 12z"/><path d="M20 10h50M20 80h50"/></svg></div><span class="num">01</span><h3>Attach or record</h3><p>Select a local video or record through the Android camera application.</p></article>
+<article class="step"><div class="visual"><svg viewBox="0 0 90 90" aria-hidden="true"><rect x="13" y="16" width="64" height="58" rx="4"/><path d="M26 34h38M26 56h38M31 27v39M59 27v39"/><path d="m38 42 14 7-14 7z"/></svg></div><span class="num">02</span><h3>Review and prepare</h3><p>Choose a time range, optionally set a focus window, and press Next to start preparation.</p></article>
+<article class="step"><div class="visual"><img src="assets/pose-preview.png" alt="Actual Nova-77 synthetic pose rendering"></div><span class="num">03</span><h3>Preview</h3><p>Inspect 3D pose frames. Empty frames and consecutive duplicates can be omitted.</p></article>
+<article class="step"><div class="visual"><svg viewBox="0 0 90 90" aria-hidden="true"><path d="M25 10h33l10 10v61H25zM58 10v12h10M34 38h26M34 47h26M34 56h17"/><path d="m41 64 7 7 7-7"/></svg></div><span class="num">04</span><h3>Export</h3><p>Save a project or share JSONL pose data, applying selected frame filters.</p></article>
+</div></section>
+<section class="section" id="install"><h2>Install and build</h2><div class="guides">
+<div class="panel"><h3>Install on Android</h3><ol><li>Download a verified APK release using the link above once available.</li><li>Open the APK on an Android 8.0+ device with a compatible ARM processor.</li><li>Allow installation from that source when prompted by Android.</li><li>Read the privacy notice. Remote inference requires your own NVIDIA API key and applicable service permissions.</li></ol><p class="small">An offline synthetic preview is available for testing the interface.</p></div>
+<div class="panel"><h3>Build from source</h3><p>Requires JDK 17, Android SDK Platform 35 and Build Tools 35.0.0. Set ANDROID_HOME to the SDK directory.</p>
+<p class="small">Windows / PowerShell</p><pre>git clone https://github.com/JeanGoetten/Pocket-Poser-App.git
+cd Pocket-Poser-App
+.\gradlew.bat :app:assembleDebug</pre>
+<p class="small">Linux / macOS</p><pre>git clone https://github.com/JeanGoetten/Pocket-Poser-App.git
+cd Pocket-Poser-App
+./gradlew :app:assembleDebug</pre>
+<p class="small">Output: <code>app/build/outputs/apk/debug/app-debug.apk</code>. Debug builds are not public releases.</p></div>
+</div></section>
+<section class="section limitations" id="limitations"><h2>Current limitations</h2>
+<p>Single-person tracking is experimental. Processing runs partly on the device and partly through NVIDIA Body Pose using a user-provided account. Video processing can incur provider charges. The JSONL export contains pose data, not an animated video.</p>
+<p>The public download is enabled only when a public GitHub Release contains an APK. Check <a href="https://github.com/JeanGoetten/Pocket-Poser-App">the repository</a> for the source, license and privacy documentation.</p></section>
+</main><footer class="footer"><div class="container"><a href="https://github.com/JeanGoetten/Pocket-Poser-App">Repository</a><a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial 1.0.0</a><p>Independent experimental project. Names and logos of third parties belong to their respective owners.</p></div></footer>
+<script>
+(async function(){
+ const link=document.getElementById('download'),note=document.getElementById('release-status');
+ try{
+  const response=await fetch('https://api.github.com/repos/JeanGoetten/Pocket-Poser-App/releases?per_page=20',{headers:{'Accept':'application/vnd.github+json'}});
+  if(!response.ok)throw new Error('Release feed unavailable');
+  const releases=await response.json();
+  const found=releases.filter(r=>!r.draft).map(r=>({release:r,apk:(r.assets||[]).find(a=>/\.apk$/i.test(a.name)&&a.browser_download_url)})).find(x=>x.apk);
+  if(!found)return;
+  link.href=found.apk.browser_download_url;link.textContent='Download APK ('+found.release.tag_name+')';link.removeAttribute('aria-disabled');
+  note.textContent='Download provided by GitHub Releases · '+found.apk.name+' · '+Math.round(found.apk.size/1048576)+' MB';
+ }catch(error){note.textContent='Check GitHub Releases for published APK files.';}
+})();
+</script>
+</body></html>

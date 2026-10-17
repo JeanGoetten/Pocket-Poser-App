@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Test-only provider is namespaced to this test APK, allowing parallel review builds. -->
+        <provider android:name="com.posepocket.tests.SyntheticProvider"
+            android:authorities="${applicationId}.synthetic" android:exported="true" />
+    </application>
+</manifest>
