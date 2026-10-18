@@ -1,5 +1,7 @@
 # Pocket Poser
 
+**Website:** https://jeangoetten.github.io/Pocket-Poser-App/
+
 Experimental Android application for extracting and viewing 3D skeletal motion from a video.
 
 A single-person video can be imported or captured through Android's camera application. The user reviews the video, selects a time range and an optional focus window, and explicitly starts processing. Video preparation and tracking run locally; NVIDIA Body Pose inference requires the user's own NVIDIA API key. Results are displayed as a Nova-77 skeleton and can be saved or exported as JSONL. Empty or duplicate pose frames can be omitted from the preview and exported sequence without replacing the source capture.
