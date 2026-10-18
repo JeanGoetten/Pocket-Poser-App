@@ -26,7 +26,7 @@
 <h1>Pocket Poser</h1>
 <p>Import a video or record one using the device camera. Review the segment and focus area, prepare the video, inspect the resulting Nova-77 pose sequence in 3D, and export pose data.</p>
 <div class="actions"><a id="download" class="button" aria-disabled="true">APK not available</a><a class="button secondary" href="https://github.com/JeanGoetten/Pocket-Poser-App">Source repository</a></div>
-<p id="release-status" class="small" role="status">No public APK has been approved yet.</p>
+<p id="release-status" class="small" role="status">Experimental APKs are intended for testing only.</p>
 </div><figure class="image"><img src="assets/pose-preview.png" alt="Synthetic Nova-77 skeletal pose preview from Pocket Poser">
 <figcaption>Actual Pocket Poser preview using synthetic pose data.</figcaption></figure></section>
 <section class="section" id="process"><h2>Processing sequence</h2><div class="steps">
@@ -36,7 +36,7 @@
 <article class="step"><div class="visual"><svg viewBox="0 0 90 90" aria-hidden="true"><path d="M25 10h33l10 10v61H25zM58 10v12h10M34 38h26M34 47h26M34 56h17"/><path d="m41 64 7 7 7-7"/></svg></div><span class="num">04</span><h3>Export</h3><p>Save a project or share JSONL pose data, applying selected frame filters.</p></article>
 </div></section>
 <section class="section" id="install"><h2>Install and build</h2><div class="guides">
-<div class="panel"><h3>Install on Android</h3><ol><li>Download a verified APK release using the link above once available.</li><li>Open the APK on an Android 8.0+ device with a compatible ARM processor.</li><li>Allow installation from that source when prompted by Android.</li><li>Read the privacy notice. Remote inference requires your own NVIDIA API key and applicable service permissions.</li></ol><p class="small">An offline synthetic preview is available for testing the interface.</p></div>
+<div class="panel"><h3>Install on Android</h3><ol><li>Download the experimental beta APK using the link above when available.</li><li>Open the APK on an Android 8.0+ device with a compatible ARM processor.</li><li>Allow installation from that source when prompted by Android.</li><li>Read the privacy notice. Remote inference requires your own NVIDIA API key and applicable service permissions.</li></ol><p class="small">An offline synthetic preview is available for testing the interface.</p></div>
 <div class="panel"><h3>Build from source</h3><p>Requires JDK 17, Android SDK Platform 35 and Build Tools 35.0.0. Set ANDROID_HOME to the SDK directory.</p>
 <p class="small">Windows / PowerShell</p><pre>git clone https://github.com/JeanGoetten/Pocket-Poser-App.git
 cd Pocket-Poser-App
@@ -44,7 +44,7 @@ cd Pocket-Poser-App
 <p class="small">Linux / macOS</p><pre>git clone https://github.com/JeanGoetten/Pocket-Poser-App.git
 cd Pocket-Poser-App
 ./gradlew :app:assembleDebug</pre>
-<p class="small">Output: <code>app/build/outputs/apk/debug/app-debug.apk</code>. Debug builds are not public releases.</p></div>
+<p class="small">Output: <code>app/build/outputs/apk/debug/app-debug.apk</code>. Debug builds are for testing only, not production use.</p></div>
 </div></section>
 <section class="section limitations" id="limitations"><h2>Current limitations</h2>
 <p>Single-person tracking is experimental. Processing runs partly on the device and partly through NVIDIA Body Pose using a user-provided account. Video processing can incur provider charges. The JSONL export contains pose data, not an animated video.</p>
@@ -59,8 +59,8 @@ cd Pocket-Poser-App
   const releases=await response.json();
   const found=releases.filter(r=>!r.draft).map(r=>({release:r,apk:(r.assets||[]).find(a=>/\.apk$/i.test(a.name)&&a.browser_download_url)})).find(x=>x.apk);
   if(!found)return;
-  link.href=found.apk.browser_download_url;link.textContent='Download APK ('+found.release.tag_name+')';link.removeAttribute('aria-disabled');
-  note.textContent='Download provided by GitHub Releases · '+found.apk.name+' · '+Math.round(found.apk.size/1048576)+' MB';
+  link.href=found.apk.browser_download_url;link.textContent=(found.release.prerelease?'Download beta APK (':'Download APK (')+found.release.tag_name+')';link.removeAttribute('aria-disabled');
+  note.textContent=(found.release.prerelease?'Experimental, development-signed build · ':'')+'GitHub Releases · '+found.apk.name+' · '+Math.round(found.apk.size/1048576)+' MB';
  }catch(error){note.textContent='Check GitHub Releases for published APK files.';}
 })();
 </script>

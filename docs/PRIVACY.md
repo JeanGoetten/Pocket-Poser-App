@@ -18,6 +18,6 @@ Do not upload recordings unless you have appropriate rights and permissions, inc
 
 The API key is stored locally using Android Keystore and is not committed to the repository. No advertising or analytics SDK is intentionally integrated. Repository issues, builds, samples and tests must not contain real people's recordings, access tokens, personal paths or device identifiers.
 
-## Before a public signed release
+## Before a production release
 
-The maintainer still needs to establish the appropriate legal controller roles, contact channel, processing countries and transfer terms, service/provider retention guarantees, relevant lawful bases and procedures for rights requests. The in-app draft policy must then be reviewed and updated, with fresh consent where necessary. Until this is complete, **no verified signed APK is offered here**.
+The maintainer still needs to establish the appropriate legal controller roles, contact channel, processing countries and transfer terms, service/provider retention guarantees, relevant lawful bases and procedures for rights requests. The in-app draft policy must then be reviewed and updated, with fresh consent where necessary. Until this is complete, experimental development-signed APK prereleases are for testing only; no production-ready APK is offered here.

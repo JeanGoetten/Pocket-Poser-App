@@ -10,7 +10,7 @@ A single-person video can be imported or captured through Android's camera appli
 
 [Open the Pocket Poser website](https://jeangoetten.github.io/Pocket-Poser-App/)
 
-The site contains installation and build instructions and links directly to an APK when a verified public GitHub Release is available.
+The site contains installation and build instructions and links to experimental APKs published through GitHub Releases.
 
 ## Install
 
@@ -38,7 +38,7 @@ cd Pocket-Poser-App
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
 
-Debug APK output: `app/build/outputs/apk/debug/app-debug.apk`. Debug builds are for local testing and are not public release packages.
+Debug APK output: `app/build/outputs/apk/debug/app-debug.apk`. Development-signed debug packages are for testing only, including experimental prerelease downloads; they are not production builds.
 
 ## Scope and limitations
 
@@ -58,4 +58,4 @@ Third-party code, SDKs, software interfaces and assets retain their respective l
 
 The app processes video on the device and sends video without audio, tracking boxes and technical metadata to NVIDIA when authorized. Users must have the necessary rights to footage, including footage of other people. Remote data handling is subject to NVIDIA's applicable terms. No promise of remote deletion is made.
 
-A complete, legally reviewed public privacy policy and verified signed APK are pending. Do not treat development builds as production releases.
+A finalized legal privacy policy and production-ready signing process are pending. The available beta APK is signed with a development key and must not be treated as a production release.
