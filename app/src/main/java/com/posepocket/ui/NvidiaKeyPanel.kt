@@ -56,7 +56,6 @@ fun NvidiaKeyPanel(onDismiss:()->Unit) {
                     visualTransformation=PasswordVisualTransformation(),enabled=!busy,
                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password,autoCorrectEnabled=false),
                     modifier=Modifier.fillMaxWidth())
-                Text(stringResource(R.string.key_storage_notice))
                 Text(stringResource(R.string.key_direct_notice))
                 Row {
                     Checkbox(checked=terms,onCheckedChange={terms=it},enabled=!busy)

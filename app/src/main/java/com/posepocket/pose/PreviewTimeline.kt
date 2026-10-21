@@ -34,6 +34,7 @@ fun buildPreviewTimeline(clip: PoseClip, maxGap: Int = 4): PreviewTimeline {
         val after = detected[index + 1]
         val gap = after.id - before.id - 1
         if (gap !in 1..maxGap) continue
+        if(clip.generator!="NVIDIA")continue
         val first = requireNotNull(before.joints)
         val last = requireNotNull(after.joints)
         if (first.size != last.size) continue

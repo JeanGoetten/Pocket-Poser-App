@@ -30,35 +30,46 @@ data class PocketState(
     val progress:ProcessingProgress?=null,
     val library:Boolean=false,
     val review:ReviewVideo?=null,
+    val tracking:TrackingSummary?=null,
+    val previewIdentity:String?=null,
+    val engine:ProcessingEngine=ProcessingEngine.NVIDIA,
 )
 
-class PocketViewModel(application:Application):AndroidViewModel(application) {
+class PocketViewModel @JvmOverloads constructor(application:Application,
+    processingFactory:((ConsentGate,PendingProcessingStore)->ResumableProcessing)?=null):AndroidViewModel(application) {
     private val context=application
     private val captures=CaptureStore(application)
-    val gate=ConsentGate(Policy("dev-2026-10-17-v6-explicit-review-focus","nvidia-body-pose-video-v1",
-        application.resources.openRawResource(R.raw.privacy_policy).bufferedReader().use { it.readText() }),AtomicConsentStore(application.noBackupFilesDir))
+    val gate=ConsentGate(CurrentPolicy.create(application),AtomicConsentStore(application.noBackupFilesDir))
     private val keyStore=NvidiaKeyStore(application.noBackupFilesDir)
     private val repository=ProjectRepository(File(application.noBackupFilesDir,"projects"))
     private val client=DirectNvidiaClient(gate,File(application.cacheDir,"results"))
+    private val completed=CompletedResultStore(File(application.noBackupFilesDir,"unsaved-result"))
     private val pending=PendingProcessingStore(File(application.noBackupFilesDir,"processing"))
     private val reviewDraft=ReviewDraftStore(application.noBackupFilesDir)
-    private val processing=ResumableProcessing(gate,pending,
+    private val processing=processingFactory?.invoke(gate,pending)?:ResumableProcessing(gate,pending,
         { uri,source -> val current=generation;try { MediaPreparer(context,gate).prepare(uri,source,trimRange,focusWindow){updatePhase(it,current)} } finally { trimRange=null;focusWindow=null } },
         { input,phase -> DeviceVideoPipeline(gate).prepare(input,phase) },
         { video,input,phase ->
             val key=keyStore.read()?:error(context.getString(R.string.key_required_prepared))
             client.infer(key,video,input,phase)
-        })
+        },
+        encode={input,phase->DeviceVideoPipeline(gate).normalizeVideo(input,phase)},
+        locate={video,phase->DeviceVideoPipeline(gate).trackVideo(video,phase)},
+        reviewTracking={video->if(TrackingSummary.from(video).percent<80)throw TrackingReviewRequired()})
     private val _keyConfigured=MutableStateFlow(false)
     val keyConfigured=_keyConfigured.asStateFlow()
     private val _initialized=MutableStateFlow(false)
     val initialized=_initialized.asStateFlow()
-    private val _state=MutableStateFlow(PocketState())
+    private val preferences=application.getSharedPreferences("pose-engine-lab",0)
+    private val initialEngine=runCatching {
+        ProcessingEngine.valueOf(preferences.getString("engine",ProcessingEngine.NVIDIA.name)!!)
+    }.getOrDefault(ProcessingEngine.NVIDIA)
+    private val _state=MutableStateFlow(PocketState(engine=initialEngine))
     val state=_state.asStateFlow()
     private var work:Job?=null
     @Volatile private var trimRange:TrimRange?=null
     @Volatile private var focusWindow:com.posepocket.media.FocusWindow?=null
-    private var generation=0
+    @Volatile private var generation=0
     private var editor:PoseEditor?=null
     private val frameFilterWriteLock=Mutex()
     val canUndo get()=editor?.canUndo==true
@@ -68,14 +79,20 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
         // A new ViewModel represents a new process/session; rotations retain the existing instance.
         listOf("media","results","shared").forEach { File(application.cacheDir,it).deleteRecursively() }
         // Recordings from the system camera may still be pending after process death: purge by age, not on every start.
-        captures.purgeStale()
+        captures.purgeStale(protectedUri=reviewDraft.load()?.uri)
         viewModelScope.launch {
             _keyConfigured.value=withContext(Dispatchers.IO){keyStore.read()!=null}
-            withContext(Dispatchers.IO){if(gate.receipt()?.revokedAt!=null)pending.clear()}
+            withContext(Dispatchers.IO){
+                if(gate.isRevoked()){pending.clear();completed.clear();discardReviewDraft()}
+                else try { completed.load()?.let { clip ->
+                    pending.clear()
+                    _state.update { it.copy(clip=clip) }
+                } }catch(_:Exception){report(context.getString(R.string.project_corrupt))}
+            }
             restorePending()
-            if(gate.isGranted()&&_state.value.recovery==null) {
+            if(gate.isGranted()&&_state.value.recovery==null&&_state.value.clip==null) {
                 val draft=withContext(Dispatchers.IO){reviewDraft.load()}
-                _state.value=_state.value.copy(review=draft)
+                _state.update { it.copy(review=draft) }
             }else if(_state.value.recovery!=null)reviewDraft.clear()
             refreshProjects()
             _initialized.value=true
@@ -95,6 +112,12 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
         beginProcessing(uri,source,trim,focus)
     }
 
+    fun chooseEngine(engine:ProcessingEngine) {
+        if(_state.value.busy||_state.value.recovery!=null||_state.value.review!=null)return
+        preferences.edit().putString("engine",engine.name).apply()
+        _state.update { it.copy(engine=engine,error=null) }
+    }
+
     fun retryProcessing() {
         if(_state.value.busy || _state.value.recovery==null)return
         beginProcessing(null,null,null,null)
@@ -106,37 +129,73 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
             report(context.getString(R.string.consent_review))
             return
         }
+        val engine=if(uri==null)ProcessingEngine.NVIDIA else _state.value.engine
+        if(engine==ProcessingEngine.NVIDIA && !gate.isRemoteAllowed()) {
+            report(context.getString(R.string.engine_remote_consent_required))
+            return
+        }
         // Set only once processing really starts, so a refused submit or a retry can never reuse a stale range.
         trimRange=trim
         focusWindow=focus
         val current=++generation
-        _state.value=_state.value.copy(busy=true,phase=context.getString(R.string.phase_preparing),error=null,message=null,stage=ProcessingStage.PREPARE,progress=ProcessingProgress(ProcessingSubstep.IMPORT))
+        _state.update { it.copy(busy=true,phase=context.getString(R.string.phase_preparing),error=null,message=null,stage=ProcessingStage.PREPARE,progress=ProcessingProgress(ProcessingSubstep.IMPORT)) }
         work=viewModelScope.launch {
+            var checkpointCommitted=uri==null
             try {
                 val phase:(String)->Unit={ message ->
                     updatePhase(message,current)
                 }
                 val clip=withContext(Dispatchers.IO) {
-                    processing.run(uri,source,phase) { stage ->
-                        reviewDraft.clear()
-                        if(current==generation)_state.value=_state.value.copy(recovery=stage)
+                    val result=if(engine.offline) {
+                        val selectedUri=requireNotNull(uri)
+                        val selectedSource=requireNotNull(source)
+                        val prepared=MediaPreparer(context,gate).prepare(selectedUri,selectedSource,trim,focus) { phase(it) }
+                        try {
+                            val encoded=DeviceVideoPipeline(gate).normalizeVideo(prepared) { phase(it) }
+                            try {
+                                OfflinePoseGenerator(context,gate).infer(encoded,engine,selectedSource,
+                                    prepared.originalHash,phase)
+                            }finally{encoded.file.delete()}
+                        }finally{prepared.file.delete()}
+                    }else {
+                        processing.run(uri,source,phase) { stage ->
+                            checkpointCommitted=true
+                            releaseReviewGrant()
+                            reviewDraft.clear()
+                            if(current==generation)_state.update { it.copy(recovery=stage) }
+                        }
                     }
+                    // Commit before crossing the cancellable IO→UI boundary.
+                    val saved=withContext(NonCancellable) { completed.save(result).also { pending.clear() } }
+                    checkpointCommitted=true
+                    releaseReviewGrant()
+                    reviewDraft.clear()
+                    saved
                 }
                 ensureActive()
                 if(current==generation) {
-                    withContext(NonCancellable+Dispatchers.IO){pending.clear()}
-                    _state.value=_state.value.copy(busy=false,clip=clip,phase=context.getString(R.string.phase_ready),error=null,recovery=null,stage=null)
+                    _state.update { it.copy(busy=false,clip=clip,phase=context.getString(R.string.phase_ready),error=null,recovery=null,stage=null) }
+                }
+            } catch(error:TrackingReviewRequired) {
+                if(current==generation) {
+                    restorePending()
+                    _state.update { it.copy(busy=false,error=null,phase="",stage=null) }
                 }
             } catch(error:CancellationException) { throw error }
             catch(error:Exception) {
                 if(current==generation) {
                     restorePending()
-                    _state.value=_state.value.copy(busy=false,error=localizeUiMessage(context,error.message?:context.getString(R.string.processing_failed)),phase="",stage=null)
+                    _state.update { it.copy(busy=false,error=localizeUiMessage(context,error.message?:context.getString(R.string.processing_failed)),phase="",stage=null) }
                 }
             } finally {
                 // Prepared/normalized files are owned by ResumableProcessing and PendingProcessingStore.
                 // Do not delete them here; retries and process-death recovery depend on them.
-                if(source=="camera"&&uri!=null){captures.discard(uri);reviewDraft.clear()}
+                if(checkpointCommitted) {
+                    if(source=="camera"&&uri!=null)captures.discard(uri)
+                    reviewDraft.clear()
+                }else if(current==generation) {
+                    _state.update { it.copy(review=reviewDraft.load()) }
+                }
             }
         }
     }
@@ -150,10 +209,11 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
         }
     }
     private suspend fun restorePending() {
-        val stage=withContext(Dispatchers.IO) {
-            try { pending.load()?.stage }catch(_:Exception){RecoveryStage.INVALID}
+        val (stage,summary)=withContext(Dispatchers.IO) {
+            try { val job=pending.load();job?.stage to job?.video?.let(TrackingSummary::from) }
+            catch(_:Exception){RecoveryStage.INVALID to null}
         }
-        _state.value=_state.value.copy(recovery=stage)
+        _state.update { it.copy(recovery=stage,tracking=summary) }
     }
 
     fun demo() {
@@ -161,7 +221,7 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
         try { gate.withConsent { } }catch(_:Exception){return}
         val current=++generation
         resetPreview()
-        _state.value=_state.value.copy(busy=true,phase=context.getString(R.string.phase_demo),error=null)
+        _state.update { it.copy(busy=true,phase=context.getString(R.string.phase_demo),error=null) }
         work=viewModelScope.launch {
             try {
                 val clip=withContext(Dispatchers.IO) {
@@ -169,9 +229,9 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
                     syntheticDemo(File(folder,"${UUID.randomUUID()}.jsonl"))
                 }
                 ensureActive();gate.withConsent { }
-                if(current==generation)_state.value=_state.value.copy(busy=false,clip=clip,phase=context.getString(R.string.phase_ready))
+                if(current==generation)_state.update { it.copy(busy=false,clip=clip,phase=context.getString(R.string.phase_ready)) }
             }catch(error:CancellationException){throw error}
-            catch(error:Exception){if(current==generation)report(error.message?:context.getString(R.string.demo_failed))}
+            catch(error:Exception){if(current==generation)failWork(error.message?:context.getString(R.string.demo_failed))}
         }
     }
 
@@ -180,39 +240,48 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
     private fun stopProcessing(discard:Boolean) {
         val current=++generation;client.interrupt()
         val previous=work;previous?.cancel()
-        _state.value=_state.value.copy(busy=true,phase=context.getString(R.string.phase_stopping),error=null,stage=null)
+        _state.update { it.copy(busy=true,phase=context.getString(R.string.phase_stopping),error=null,stage=null) }
         work=viewModelScope.launch {
             try {
                 // A second pause/revocation must wait for the original IO writer,
                 // even if it cancels this cleanup job in the meantime.
                 withContext(NonCancellable) {
                     previous?.join()
-                    if(discard)withContext(Dispatchers.IO){pending.clear()}
+                    if(discard)withContext(Dispatchers.IO){pending.clear();completed.clear();discardReviewDraft()}
                 }
                 if(current==generation) {
-                    resetPreview();restorePending()
-                    _state.value=_state.value.copy(busy=false,phase="",message=if(discard)null else context.getString(R.string.processing_stopped))
+                    val ready=if(discard)null else withContext(Dispatchers.IO){completed.load()}
+                    if(ready!=null) {
+                        _state.update { it.copy(busy=false,clip=ready,recovery=null,tracking=null,stage=null,
+                            phase=context.getString(R.string.phase_ready),error=null) }
+                    }else {
+                        resetPreview();restorePending()
+                        if(!discard&&_state.value.recovery==null)_state.update { it.copy(review=reviewDraft.load()) }
+                        _state.update { it.copy(busy=false,phase="",message=if(discard)null else context.getString(R.string.processing_stopped)) }
+                    }
                 }
-            }catch(_:CancellationException){}catch(_:Exception){if(current==generation)report(context.getString(R.string.discard_processing_failed))}
+            }catch(_:CancellationException){}catch(_:Exception){if(current==generation)failWork(context.getString(R.string.discard_processing_failed))}
         }
     }
 
     fun revokeRemote() {
         cancelReview()
         File(context.cacheDir,"shared").deleteRecursively()
+        File(context.noBackupFilesDir,"exports").deleteRecursively()
         stopProcessing(true)
 
     }
 
     fun resetPreview(toEntry:Boolean=false) {
         editor=null
+        completed.clear()
         _state.value.clip?.raw?.let { raw ->
             if(raw.canonicalPath.startsWith(context.cacheDir.canonicalPath+File.separator)) {
                 val pending=work
                 if(pending!=null&&!pending.isCompleted)pending.invokeOnCompletion { raw.delete() } else raw.delete()
             }
         }
-        _state.value=_state.value.copy(clip=null,savedId=null,error=null,message=null,editing=false,library=if(toEntry)false else _state.value.library)
+        _state.update { it.copy(clip=null,savedId=null,previewIdentity=null,error=null,message=null,editing=false,library=if(toEntry)false else _state.value.library) }
     }
     fun setFrameFilters(filters:FrameFilters) {
         val current=_state.value
@@ -235,30 +304,35 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
         val clip=_state.value.clip?:return
         if(_state.value.savedId!=null)return
         val current=generation
-        _state.value=_state.value.copy(busy=true,phase=context.getString(R.string.phase_saving))
+        _state.update { it.copy(busy=true,phase=context.getString(R.string.phase_saving)) }
         work=viewModelScope.launch {
             try {
-                val project=withContext(Dispatchers.IO){repository.save(clip)}
+                val (project,savedClip)=withContext(Dispatchers.IO){
+                    val project=repository.save(clip)
+                    val savedClip=repository.open(project.id)
+                    completed.clear()
+                    project to savedClip
+                }
                 ensureActive()
-                if(current==generation)_state.value=_state.value.copy(busy=false,savedId=project.id,message=context.getString(R.string.project_saved))
+                if(current==generation)_state.update { it.copy(busy=false,clip=savedClip,previewIdentity=it.previewIdentity?:clip.raw.absolutePath,savedId=project.id,message=context.getString(R.string.project_saved)) }
                 refreshProjects()
             }catch(error:CancellationException){throw error}
-            catch(_:Exception){if(current==generation)report(context.getString(R.string.project_save_failed))}
+            catch(_:Exception){if(current==generation)failWork(context.getString(R.string.project_save_failed))}
         }
     }
     fun open(id:String) {
         if(_state.value.busy)return
         val current=++generation
-        _state.value=_state.value.copy(busy=true,phase=context.getString(R.string.phase_opening),error=null)
+        _state.update { it.copy(busy=true,phase=context.getString(R.string.phase_opening),error=null) }
         work=viewModelScope.launch {
             try {
                 val clip=withContext(Dispatchers.IO){repository.open(id)}
                 ensureActive()
                 if(current==generation) {
-                    resetPreview();_state.value=_state.value.copy(busy=false,clip=clip,savedId=id)
+                    resetPreview();_state.update { it.copy(busy=false,clip=clip,savedId=id) }
                 }
             }catch(error:CancellationException){throw error}
-            catch(_:Exception){if(current==generation)report(context.getString(R.string.project_corrupt))}
+            catch(_:Exception){if(current==generation)failWork(context.getString(R.string.project_corrupt))}
         }
     }
     fun deleteProject(id:String) {
@@ -275,12 +349,18 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
     }
     private suspend fun refreshProjects() {
         val projects=withContext(Dispatchers.IO){repository.list()}
-        _state.value=_state.value.copy(projects=projects)
+        _state.update { it.copy(projects=projects) }
     }
     fun refreshKeyStatus() {
         viewModelScope.launch { _keyConfigured.value=withContext(Dispatchers.IO){keyStore.read()!=null} }
     }
-    fun startEditing()=edit(context.getString(R.string.phase_validate_fk),false){}
+    fun startEditing() {
+        if(_state.value.clip?.generator!="NVIDIA") {
+            report(context.getString(R.string.engine_uncalibrated_edit))
+            return
+        }
+        edit(context.getString(R.string.phase_validate_fk),false){}
+    }
     fun rotateJoint(joint:Int,start:Int,end:Int,degrees:Float,endDegrees:Float?)=edit(context.getString(R.string.phase_apply_keys),true) {
         it.rotate(joint,start,end,Quaternion.zDegrees(degrees),endDegrees?.let { angle->Quaternion.zDegrees(angle) })
     }
@@ -290,8 +370,9 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
     private fun edit(phase:String,dirty:Boolean,action:(PoseEditor)->Unit) {
         val clip=_state.value.clip?:return
         if(_state.value.busy)return
+        if(clip.generator!="NVIDIA") { report(context.getString(R.string.engine_uncalibrated_edit));return }
         val current=generation
-        _state.value=_state.value.copy(busy=true,phase=phase,error=null)
+        _state.update { it.copy(busy=true,phase=phase,error=null) }
         work=viewModelScope.launch {
             try {
                 val (engine,updated)=withContext(Dispatchers.IO) {
@@ -301,10 +382,10 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
                 }
                 if(current==generation) {
                     editor=engine
-                    _state.value=_state.value.copy(busy=false,clip=updated,editing=true,savedId=if(dirty)null else _state.value.savedId)
+                    _state.update { it.copy(busy=false,clip=updated,editing=true,savedId=if(dirty)null else _state.value.savedId) }
                 }
             }catch(error:CancellationException){throw error}
-            catch(error:Exception){if(current==generation)report(error.message?:context.getString(R.string.edit_failed_original))}
+            catch(error:Exception){if(current==generation)failWork(error.message?:context.getString(R.string.edit_failed_original))}
         }
     }
     /** Pick/record lands here first: the person reviews and optionally trims before anything is prepared or sent. */
@@ -328,27 +409,41 @@ class PocketViewModel(application:Application):AndroidViewModel(application) {
         val draft=_state.value.review?:return
         if(start<0||end<=start)return
         val updated=draft.copy(startMs=start,endMs=end)
-        try{reviewDraft.save(updated);_state.value=_state.value.copy(review=updated)}catch(_:Exception){report(context.getString(R.string.accept_save_failed))}
+        try{reviewDraft.save(updated);_state.update { it.copy(review=updated) }}catch(_:Exception){report(context.getString(R.string.accept_save_failed))}
     }
     fun updateReviewFocus(focus:com.posepocket.media.FocusWindow?) {
         val draft=_state.value.review?:return
         val updated=draft.copy(focus=focus)
-        try{reviewDraft.save(updated);_state.value=_state.value.copy(review=updated)}
+        try{reviewDraft.save(updated);_state.update { it.copy(review=updated) }}
         catch(_:Exception){report(context.getString(R.string.accept_save_failed))}
     }
     fun cancelReview() {
         val pending=_state.value.review?:return
         if(pending.source=="camera") captures.discard(pending.uri)
+        releaseReviewGrant()
         reviewDraft.clear()
-        _state.value=_state.value.copy(review=null)
+        _state.update { it.copy(review=null) }
     }
     fun confirmReview(trim:TrimRange?,focus:com.posepocket.media.FocusWindow?=null) {
         val pending=_state.value.review?:return
-        _state.value=_state.value.copy(review=null)
+        _state.update { it.copy(review=null) }
         submit(pending.uri,pending.source,trim,focus)
     }
-    fun showLibrary(show:Boolean) { _state.value=_state.value.copy(library=show) }
-    fun dismissNotice() { _state.value=_state.value.copy(error=null,message=null) }
-    fun report(message:String) { _state.value=_state.value.copy(busy=false,error=localizeUiMessage(context,message)) }
+    fun showLibrary(show:Boolean) { _state.update { it.copy(library=show) } }
+    fun dismissNotice() { _state.update { it.copy(error=null,message=null) } }
+    private fun releaseReviewGrant() {
+        reviewDraft.load()?.takeIf { it.source=="attachment" }?.let {
+            try { context.contentResolver.releasePersistableUriPermission(it.uri,android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            catch(_:Exception){}
+        }
+    }
+    private fun discardReviewDraft() {
+        releaseReviewGrant()
+        reviewDraft.load()?.let { if(it.source=="camera")captures.discard(it.uri) }
+        reviewDraft.clear()
+    }
+    /** Auxiliary errors must never unlock an unrelated processing operation. */
+    fun report(message:String) { _state.update { it.copy(error=localizeUiMessage(context,message)) } }
+    private fun failWork(message:String) { _state.update { it.copy(busy=false,error=localizeUiMessage(context,message)) } }
     override fun onCleared() { work?.cancel();client.interrupt();super.onCleared() }
 }

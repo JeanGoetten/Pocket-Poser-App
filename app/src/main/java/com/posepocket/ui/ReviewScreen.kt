@@ -29,6 +29,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.posepocket.PocketViewModel
@@ -80,7 +83,7 @@ fun ReviewHost(model:PocketViewModel,review:ReviewVideo) {
     BackHandler{model.cancelReview()}
     ReviewScreen(load,{start,end->
         val duration=(load as? ReviewLoad.Ready)?.info?.durationMs?:0L
-        model.confirmReview(if(start==0L&&end>=duration-50L)null else TrimRange(start*1000,end*1000), model.state.value.review?.focus)
+        model.confirmReview(if(start==0L&&end>=duration)null else TrimRange(start*1000,end*1000), model.state.value.review?.focus)
     },model::cancelReview,review.startMs,review.endMs,model::updateReviewRange,review.focus,model::updateReviewFocus)
 }
 
@@ -91,6 +94,7 @@ fun ReviewScreen(load:ReviewLoad,onNext:(Long,Long)->Unit,onChoose:()->Unit,init
     var start by rememberSaveable(info?.uri?.toString(),info?.durationMs){mutableLongStateOf(initialStart)}
     var end by rememberSaveable(info?.uri?.toString(),info?.durationMs){mutableLongStateOf(initialEnd?:info?.durationMs?:0L)}
     var focus by remember(info?.uri?.toString()){mutableStateOf(initialFocus)}
+    var playbackFraction by remember(info?.uri?.toString(),start,end){mutableFloatStateOf(0f)}
     Column(Modifier.fillMaxSize().padding(bottom=8.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
             IconAction(PocketIcons.Back,stringResource(R.string.back),onChoose,Modifier.testTag("review_back"))
@@ -123,6 +127,13 @@ fun ReviewScreen(load:ReviewLoad,onNext:(Long,Long)->Unit,onChoose:()->Unit,init
                                 }
                             },Modifier.fillMaxWidth().align(Alignment.Center).testTag("review_range").semantics{contentDescription=description},
                                 valueRange=0f..total,onValueChangeFinished={onRange(start,end)})
+                            Canvas(Modifier.matchParentSize().testTag("review_playhead")) {
+                                val margin=12.dp.toPx()
+                                val fraction=((safeStart+playbackFraction*(safeEnd-safeStart))/total).coerceIn(0f,1f)
+                                val x=margin+fraction*(size.width-2*margin).coerceAtLeast(0f)
+                                drawLine(Color(0xFFFFA000),Offset(x,3.dp.toPx()),
+                                    Offset(x,size.height-3.dp.toPx()),strokeWidth=2.dp.toPx())
+                            }
                         }
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(clock(safeStart),style=MaterialTheme.typography.labelMedium);Text(clock(safeEnd),style=MaterialTheme.typography.labelMedium)}
                         if(safeStart>0||safeEnd<load.info.durationMs)Text(stringResource(R.string.trim_short_note),style=MaterialTheme.typography.bodySmall)
@@ -131,11 +142,13 @@ fun ReviewScreen(load:ReviewLoad,onNext:(Long,Long)->Unit,onChoose:()->Unit,init
                     val panelLimit=maxHeight*.45f
                     if(maxWidth>=600.dp&&maxWidth>maxHeight) {
                         Row(Modifier.fillMaxSize(),horizontalArrangement=Arrangement.spacedBy(16.dp)) {
-                            VideoFocusReview(load.info,safeStart,safeEnd,focus,{focus=it},{onFocus(focus)},Modifier.weight(1f).fillMaxHeight().testTag("review_poster"))
+                            VideoFocusReview(load.info,safeStart,safeEnd,focus,{focus=it},{onFocus(focus)},
+                                {playbackFraction=it},Modifier.weight(1f).fillMaxHeight().testTag("review_poster"))
                             Column(Modifier.width(280.dp).fillMaxHeight().verticalScroll(rememberScrollState()).testTag("review_side_panel"),verticalArrangement=Arrangement.spacedBy(12.dp)){controls()}
                         }
                     }else Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                        VideoFocusReview(load.info,safeStart,safeEnd,focus,{focus=it},{onFocus(focus)},Modifier.fillMaxWidth().weight(1f).testTag("review_poster"))
+                        VideoFocusReview(load.info,safeStart,safeEnd,focus,{focus=it},{onFocus(focus)},
+                            {playbackFraction=it},Modifier.fillMaxWidth().weight(1f).testTag("review_poster"))
                         Column(Modifier.fillMaxWidth().heightIn(max=panelLimit).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){controls()}
                     }
                 }
@@ -149,35 +162,63 @@ fun ReviewScreen(load:ReviewLoad,onNext:(Long,Long)->Unit,onChoose:()->Unit,init
 /** Corners resize the normalized video crop; the actual crop runs before tracking. */
 @Composable
 private fun VideoFocusReview(info:ReviewInfo,start:Long,end:Long,focus:FocusWindow?,
-    onChange:(FocusWindow)->Unit,onCommit:()->Unit,modifier:Modifier) {
+    onChange:(FocusWindow)->Unit,onCommit:()->Unit,onProgress:(Float)->Unit,modifier:Modifier) {
     val current by rememberUpdatedState(focus)
     val changeCrop by rememberUpdatedState(onChange)
     val commit by rememberUpdatedState(onCommit)
     var anchor by remember{mutableIntStateOf(-1)}
     BoxWithConstraints(modifier) {
-        VideoReview(info,start,end,Modifier.fillMaxSize())
+        VideoReview(info,start,end,Modifier.fillMaxSize(),onPlaybackProgress=onProgress)
         if(focus!=null) {
             val videoWidth=minOf(maxWidth,maxHeight*info.aspect)
             val videoHeight=videoWidth/info.aspect
+            val description=stringResource(R.string.review_focus)
+            val regionDescription=stringResource(R.string.focus_region_description,
+                (focus.left*100).roundToInt(),(focus.top*100).roundToInt(),(focus.right*100).roundToInt(),(focus.bottom*100).roundToInt())
+            val left=stringResource(R.string.focus_move_left);val right=stringResource(R.string.focus_move_right)
+            val up=stringResource(R.string.focus_move_up);val down=stringResource(R.string.focus_move_down)
+            val expand=stringResource(R.string.focus_expand);val shrink=stringResource(R.string.focus_shrink)
+            fun accessibleDrag(anchor:Int,dx:Float,dy:Float):Boolean {
+                current?.let { changeCrop(it.drag(anchor,dx,dy));commit() }
+                return true
+            }
             Canvas(Modifier.align(Alignment.Center).size(videoWidth,videoHeight)
-                .testTag("review_focus_window").pointerInput(Unit) {
+                .testTag("review_focus_window").semantics {
+                    contentDescription=description;stateDescription=regionDescription
+                    customActions=listOf(
+                        CustomAccessibilityAction(left){accessibleDrag(4,-.03f,0f)},
+                        CustomAccessibilityAction(right){accessibleDrag(4,.03f,0f)},
+                        CustomAccessibilityAction(up){accessibleDrag(4,0f,-.03f)},
+                        CustomAccessibilityAction(down){accessibleDrag(4,0f,.03f)},
+                        CustomAccessibilityAction(expand){
+                            current?.let { changeCrop(it.drag(0,-.03f,-.03f).drag(3,.03f,.03f));commit() };true
+                        },
+                        CustomAccessibilityAction(shrink){
+                            current?.let { changeCrop(it.drag(0,.03f,.03f).drag(3,-.03f,-.03f));commit() };true
+                        })
+                }.pointerInput(Unit) {
                     detectDragGestures(onDragStart={ pos->
                         val region=current?:return@detectDragGestures
                         val x=pos.x/size.width;val y=pos.y/size.height
                         val corners=listOf(region.left to region.top,region.right to region.top,
                             region.left to region.bottom,region.right to region.bottom)
-                        anchor=corners.indices.minByOrNull { index->
+                        val nearest=corners.indices.minByOrNull { index->
                             val(cx,cy)=corners[index];(x-cx)*(x-cx)+(y-cy)*(y-cy)
                         }?:-1
+                        val distance=if(nearest<0)Float.MAX_VALUE else {
+                            val(cx,cy)=corners[nearest];(x-cx)*(x-cx)+(y-cy)*(y-cy)
+                        }
+                        anchor=when {
+                            distance<.01f->nearest
+                            x in region.left..region.right && y in region.top..region.bottom->4
+                            else->-1
+                        }
                     },onDragEnd={anchor=-1;commit()},onDragCancel={anchor=-1}){pointer,drag->
                         pointer.consume()
                         val a=current?:return@detectDragGestures
+                        if(anchor<0)return@detectDragGestures
                         val dx=drag.x/size.width;val dy=drag.y/size.height
-                        val l=if(anchor==0||anchor==2)(a.left+dx).coerceIn(0f,a.right-.2f)else a.left
-                        val rr=if(anchor==1||anchor==3)(a.right+dx).coerceIn(a.left+.2f,1f)else a.right
-                        val t=if(anchor==0||anchor==1)(a.top+dy).coerceIn(0f,a.bottom-.2f)else a.top
-                        val b=if(anchor==2||anchor==3)(a.bottom+dy).coerceIn(a.top+.2f,1f)else a.bottom
-                        changeCrop(FocusWindow(l,t,rr,b))
+                        changeCrop(a.drag(anchor,dx,dy))
                     }
                 }) {
                 val w=size.width;val h=size.height

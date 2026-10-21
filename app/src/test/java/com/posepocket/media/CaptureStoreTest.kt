@@ -50,6 +50,12 @@ class CaptureStoreTest {
         assertTrue(fresh.file.exists())
         fresh.file.delete()
     }
+    @Test fun purgeKeepsAnOldRecordingThatStillHasAReviewDraft() {
+        val pending=store.create().also { it.file.writeText("synthetic");it.file.setLastModified(1_000L) }
+        store.purgeStale(maxAgeMillis=60_000,now=System.currentTimeMillis(),protectedUri=pending.uri)
+        assertTrue(pending.file.exists())
+        pending.file.delete()
+    }
 
     @Test fun recordVideoIntentTargetsCaptureUriWithLimitsAndGrants() {
         val uri=store.create().uri

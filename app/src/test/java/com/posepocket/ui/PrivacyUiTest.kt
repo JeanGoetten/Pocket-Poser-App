@@ -48,7 +48,21 @@ class PrivacyUiTest {
         compose.onNodeWithText("Aceitar e continuar").assertIsNotEnabled()
         compose.onNodeWithText("Entrada de vídeo").assertDoesNotExist()
         compose.onAllNodes(isToggleable())[0].performScrollTo().performClick()
-        compose.onNodeWithText("Aceitar e continuar").assertIsNotEnabled()
+        compose.onNodeWithText("Aceitar e continuar").assertIsEnabled()
+        compose.onAllNodes(isToggleable())[1].assertIsOff()
+    }
+
+    @Test fun localOnlyConsentCanBeUpgradedToNvidiaExplicitly() {
+        launch()
+        compose.onAllNodes(isToggleable())[0].performScrollTo().performClick()
+        compose.onNodeWithText("Aceitar e continuar").performScrollTo().performClick()
+        assertTrue(gate.isGranted())
+        assertFalse(gate.isRemoteAllowed())
+        compose.onNodeWithContentDescription("Privacidade e autorização").performClick()
+        compose.onNodeWithText("Autorizar processamento remoto NVIDIA").assertIsNotEnabled()
+        compose.onAllNodes(isToggleable())[0].performScrollTo().performClick()
+        compose.onNodeWithText("Autorizar processamento remoto NVIDIA").performScrollTo().performClick()
+        assertTrue(gate.isRemoteAllowed())
     }
 
     @Test fun fullPolicyIsReadableWithoutAcceptanceAndChecksReset() {

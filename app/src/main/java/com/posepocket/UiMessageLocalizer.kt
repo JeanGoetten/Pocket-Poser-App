@@ -10,6 +10,11 @@ import android.content.Context
 internal fun localizeUiMessage(context: Context, message: String): String {
     if (context.resources.configuration.locales[0].language == "pt") return message
     val direct = when (message) {
+        "O processamento guardado usa formato antigo. Descarte-o e revise o vídeo novamente." -> R.string.backend_old_processing
+        "Intervalo de vídeo inválido." -> R.string.backend_invalid_trim
+        "O intervalo precisa conter pelo menos dois quadros de saída." -> R.string.backend_short_trim
+        "Limite de quadros de origem excedido (240 FPS por 10 minutos)." -> R.string.backend_source_frames
+
         "Mais de uma pessoa detectada. Use um vídeo com apenas uma pessoa." -> R.string.backend_multiple_people
         "Rastreamento ambíguo após movimento ou oclusão. Tente outro vídeo." -> R.string.backend_ambiguous_track
         "Não foi possível iniciar o processamento de vídeo neste aparelho." -> R.string.backend_video_init_failed

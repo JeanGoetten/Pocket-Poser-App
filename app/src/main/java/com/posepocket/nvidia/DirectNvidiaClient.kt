@@ -34,7 +34,7 @@ class DirectNvidiaClient(
     fun interrupt() { active.getAndSet(null)?.shutdownNow() }
 
     suspend fun infer(key:String,video:DeviceVideo,input:PreparedVideo,onPhase:(String)->Unit):PoseClip=withContext(Dispatchers.IO) {
-        NvidiaKeyStore.validate(key);gate.withConsent { }
+        NvidiaKeyStore.validate(key);gate.withRemoteConsent { }
         require(video.boxes.isNotEmpty()&&video.frames in 2..18000&&video.file.length() in 1..50_000_000)
         require(video.boxes.map { it.frame }.distinct().size==video.boxes.size)
         require(video.boxes.all { it.frame in 0 until video.frames && listOf(it.x,it.y,it.width,it.height).all(Float::isFinite)&&it.width>0&&it.height>0&&it.x<video.width&&it.y<video.height&&it.x+it.width>0&&it.y+it.height>0 })
@@ -93,13 +93,13 @@ class DirectNvidiaClient(
             val stream=BodyPoseServiceGrpc.newStub(channel).withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers))
                 .withDeadlineAfter(240,TimeUnit.SECONDS).estimateBodyPose(observer)
             suspend fun send(message:BodyPoseRequest) {
-                currentCoroutineContext().ensureActive();gate.withConsent { }
+                currentCoroutineContext().ensureActive();gate.withRemoteConsent { }
                 while(request.get()?.isReady!=true) {
                     if(completed.isCompleted){completed.await();error("A NVIDIA encerrou o envio antes do fim do vídeo.")}
                     delay(10);currentCoroutineContext().ensureActive();gate.withConsent { }
                 }
                 if(completed.isCompleted){completed.await();error("Envio encerrado prematuramente.")}
-                gate.withConsent { stream.onNext(message) }
+                gate.withRemoteConsent { stream.onNext(message) }
             }
             onPhase("Enviando configuração e rastreamento à NVIDIA")
             send(BodyPoseRequest.newBuilder().setConfig(BodyPoseConfig.getDefaultInstance()).build())

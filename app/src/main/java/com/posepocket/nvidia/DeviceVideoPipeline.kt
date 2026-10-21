@@ -1,6 +1,13 @@
 package com.posepocket.nvidia
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import com.posepocket.media.VideoGeometry
+import com.posepocket.media.TrimmedTimeline
+import com.posepocket.media.TrimRange
 import android.media.*
 import com.posepocket.media.PreparedVideo
 import com.posepocket.pose.fileHash
@@ -17,6 +24,8 @@ import java.util.UUID
 import kotlin.math.*
 
 data class PersonBox(val frame:Int,val x:Float,val y:Float,val width:Float,val height:Float)
+data class NormalizedVideo(val file:File,val hash:String,val frames:Int,val width:Int,val height:Int)
+
 data class DeviceVideo(val file:File,val hash:String,val frames:Int,val width:Int,val height:Int,val boxes:List<PersonBox>,val detectorFrames:Int=boxes.size)
 
 /** Conservative full-body baseline: ambiguity is an error, never a made-up box. */
@@ -42,17 +51,29 @@ class SinglePersonTrack {
     }
 }
 
-class DeviceVideoPipeline(private val gate:ConsentGate) {
+enum class DetectorBackend { HOG, ML_KIT }
+
+class DeviceVideoPipeline(
+    private val gate:ConsentGate,
+    private val backend:DetectorBackend =
+        if (com.posepocket.BuildConfig.POSE_DETECTOR_MLKIT) DetectorBackend.ML_KIT else DetectorBackend.HOG,
+) {
     private suspend fun checkActive() { currentCoroutineContext().ensureActive();gate.withConsent { } }
 
     suspend fun prepare(input:PreparedVideo,onPhase:(String)->Unit):DeviceVideo {
+        val video=normalizeVideo(input,onPhase)
+        return try { trackVideo(video,onPhase) }catch(error:Throwable){video.file.delete();throw error}
+    }
+
+    suspend fun normalizeVideo(input:PreparedVideo,onPhase:(String)->Unit):NormalizedVideo {
         checkActive()
+        // writeYuv uses OpenCV too; normalization can run before the tracking checkpoint.
         check(OpenCVLoader.initLocal()) { "Não foi possível iniciar o processamento de vídeo neste aparelho." }
         val target=File(input.file.parentFile,"${UUID.randomUUID()}-cfr.mp4")
         try {
             require(input.file.parentFile!!.usableSpace>100_000_000) { "Libere pelo menos 100 MB para preparar o vídeo." }
             onPhase("Normalizando vídeo no celular")
-            val frames=normalize(input.file,target,onPhase,input.focus)
+            val frames=normalize(input.file,target,onPhase,input.focus,input.trim)
             checkActive()
             onPhase("Verificando vídeo normalizado")
             val extractor=MediaExtractor()
@@ -72,15 +93,21 @@ class DeviceVideoPipeline(private val gate:ConsentGate) {
                 require(count==frames) { "Contagem de quadros do vídeo normalizado inconsistente." }
                 f.getInteger(MediaFormat.KEY_WIDTH) to f.getInteger(MediaFormat.KEY_HEIGHT)
             }finally{extractor.release()}
-            onPhase("Localizando uma pessoa no celular")
-            val (boxes,detectorFrames)=track(target,frames,dimensions.first,dimensions.second,onPhase)
-            checkActive()
-            return DeviceVideo(target,fileHash(target),frames,dimensions.first,dimensions.second,boxes,detectorFrames)
+            return NormalizedVideo(target,fileHash(target),frames,dimensions.first,dimensions.second)
         }catch(error:Throwable){target.delete();throw error}
     }
 
-    private suspend fun normalize(input:File,output:File,onPhase:(String)->Unit,focus:com.posepocket.media.FocusWindow?):Int {
-        if(focus==null)compatibleFrameCount(input)?.let { frames ->
+    suspend fun trackVideo(video:NormalizedVideo,onPhase:(String)->Unit):DeviceVideo {
+        checkActive()
+        check(OpenCVLoader.initLocal()) { "Não foi possível iniciar o processamento de vídeo neste aparelho." }
+        onPhase("Localizando uma pessoa no celular")
+        val (boxes,detectorFrames)=track(video.file,video.frames,video.width,video.height,onPhase)
+        checkActive()
+        return DeviceVideo(video.file,video.hash,video.frames,video.width,video.height,boxes,detectorFrames)
+    }
+
+    private suspend fun normalize(input:File,output:File,onPhase:(String)->Unit,focus:com.posepocket.media.FocusWindow?,trim:TrimRange?):Int {
+        if(focus==null&&trim==null)compatibleFrameCount(input)?.let { frames ->
             onPhase("Vídeo H.264 SDR 30 CFR compatível; preservando quadros")
             input.inputStream().use { source -> output.outputStream().use { target ->
                 val buffer=ByteArray(65536);var copied=0L
@@ -108,16 +135,27 @@ class DeviceVideoPipeline(private val gate:ConsentGate) {
             val region=focus?.pixelBounds(first.width,first.height)
             val originalWidth=region?.get(2)?:first.width
             val originalHeight=region?.get(3)?:first.height
-            val scale=min(1.0,720.0/max(originalWidth,originalHeight))
-            val width=max(64,(originalWidth*scale/16).toInt()*16)
-            val height=max(128,(originalHeight*scale/16).toInt()*16)
+            first.recycle()
+            val geometry=VideoGeometry.fit(originalWidth,originalHeight)
+            val width=geometry.width;val height=geometry.height
+            val timeline=trim?.let { range ->
+                val extractor=MediaExtractor()
+                val timestamps=ArrayList<Long>()
+                try {
+                    extractor.setDataSource(input.absolutePath);extractor.selectTrack(0)
+                    while(extractor.sampleTime>=0) {
+                        checkActive();timestamps.add(extractor.sampleTime)
+                        require(timestamps.size<=144000);extractor.advance()
+                    }
+                }finally{extractor.release()}
+                TrimmedTimeline(timestamps,range)
+            }
             // Indexed decoding returns source-sized bitmaps. Budget for ARGB even
             // when RGB_565 is requested: devices may ignore the preference.
-            val batchSize=(16_000_000L/(first.width.toLong()*first.height*4)).coerceIn(1,8).toInt()
-            val fitsBatchBudget=first.width.toLong()*first.height*4<=16_000_000
-            first.recycle()
-            val frames=ceil(duration*30.0/1000).toInt().coerceAtMost(18000)
-            val indexedFrames=if(android.os.Build.VERSION.SDK_INT>=28&&fitsBatchBudget) nearCfrFrameCount(input,frames) else null
+            val batchSize=(16_000_000L/(firstWidth.toLong()*firstHeight*4)).coerceIn(1,8).toInt()
+            val fitsBatchBudget=firstWidth.toLong()*firstHeight*4<=16_000_000
+            val frames=timeline?.frames?:ceil(duration*30.0/1000).toInt().coerceAtMost(18000)
+            val indexedFrames=if(timeline==null&&android.os.Build.VERSION.SDK_INT>=28&&fitsBatchBudget) nearCfrFrameCount(input,frames) else null
             val format=MediaFormat.createVideoFormat("video/avc",width,height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
                 setInteger(MediaFormat.KEY_BIT_RATE,2_000_000)
@@ -170,7 +208,12 @@ class DeviceVideoPipeline(private val gate:ConsentGate) {
                     requireNotNull(original) { "Falha ao decodificar quadro do vídeo." }
                     val region=focus?.pixelBounds(original.width,original.height)
                     val cropped=if(region==null)original else Bitmap.createBitmap(original,region[0],region[1],region[2],region[3])
-                    val bitmap=Bitmap.createScaledBitmap(cropped,width,height,true)
+                    val bitmap=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888)
+                    Canvas(bitmap).apply {
+                        drawColor(Color.BLACK)
+                        drawBitmap(cropped,null,Rect(geometry.left,geometry.top,
+                            geometry.left+geometry.contentWidth,geometry.top+geometry.contentHeight),Paint(Paint.FILTER_BITMAP_FLAG))
+                    }
                     try {
                         val image=codec.getInputImage(slot)?:error("Codificador sem entrada YUV compatível.")
                         try { writeYuv(bitmap,image) }finally{image.close()}
@@ -193,10 +236,12 @@ class DeviceVideoPipeline(private val gate:ConsentGate) {
                 }
             }else for(frame in 0 until frames) {
                 checkActive()
+                val time=timeline?.timestamp(frame)?:frame*1_000_000L/30
                 val bitmap=if(android.os.Build.VERSION.SDK_INT>=27)
-                    retriever.getScaledFrameAtTime(frame*1_000_000L/30,MediaMetadataRetriever.OPTION_CLOSEST,
-                        if(focus==null)width else firstWidth,if(focus==null)height else firstHeight)
-                else retriever.getFrameAtTime(frame*1_000_000L/30,MediaMetadataRetriever.OPTION_CLOSEST)
+                    retriever.getScaledFrameAtTime(time,MediaMetadataRetriever.OPTION_CLOSEST,
+                        if(focus==null)geometry.contentWidth else firstWidth,
+                        if(focus==null)geometry.contentHeight else firstHeight)
+                else retriever.getFrameAtTime(time,MediaMetadataRetriever.OPTION_CLOSEST)
                 try{encodeFrame(frame,bitmap)}finally{bitmap?.recycle()}
             }
             encodeFrame(frames,null)
@@ -241,7 +286,7 @@ class DeviceVideoPipeline(private val gate:ConsentGate) {
             if(format.getString(MediaFormat.KEY_MIME)!="video/avc")return null
             val width=format.getInteger(MediaFormat.KEY_WIDTH)
             val height=format.getInteger(MediaFormat.KEY_HEIGHT)
-            if(width<64||height<128||max(width,height)>720)return null
+            if(width<64||height<128||max(width,height)>720||!VideoGeometry.detectorCompatible(width,height))return null
             if(format.containsKey(MediaFormat.KEY_ROTATION)&&format.getInteger(MediaFormat.KEY_ROTATION)!=0)return null
             // Some extractors omit KEY_ROTATION even when the MP4 display matrix
             // is rotated. Copying that file would send upright boxes against a
@@ -303,6 +348,8 @@ class DeviceVideoPipeline(private val gate:ConsentGate) {
         val retriever=MediaMetadataRetriever()
         val hog=HOGDescriptor().apply { setSVMDetector(HOGDescriptor.getDefaultPeopleDetector()) }
         val tracker=SinglePersonTrack();val output=mutableListOf<PersonBox>()
+        val mlkit=if(backend==DetectorBackend.ML_KIT)MlKitPosePersonDetector()else null
+        val startedAt=android.os.SystemClock.elapsedRealtime()
         val gaps=ConfirmedTrackGaps();val previousGray=Mat()
         var detected=0
         try {
@@ -314,9 +361,17 @@ class DeviceVideoPipeline(private val gate:ConsentGate) {
                     val factor=min(1.0,640.0/max(width,height))
                     Imgproc.resize(rgb,small,Size(width*factor,height*factor))
                     require(small.rows()>=128&&small.cols()>=64) { "Vídeo pequeno demais para localizar o corpo inteiro." }
-                    hog.detectMultiScale(small,rects,weights,.5,Size(8.0,8.0),Size(8.0,8.0),1.05,2.0,false)
-                    val candidates=if(rects.empty()||weights.empty()) emptyList<PersonBox>() else rects.toArray().zip(weights.toArray().toList()).sortedByDescending { it.second }.map { (r,_)->
-                        PersonBox(frame,r.x.toFloat(),r.y.toFloat(),r.width.toFloat(),r.height.toFloat())
+                    val candidates=if(mlkit!=null) {
+                        // Convert ML Kit coordinates to HOG/temporal detector pixels.
+                        mlkit.detect(bitmap,frame)?.let { box ->
+                            listOf(box.inVideoCoordinates(bitmap.width,bitmap.height,small.cols(),small.rows()))
+                        } ?: emptyList()
+                    } else {
+                        hog.detectMultiScale(small,rects,weights,.5,Size(8.0,8.0),Size(8.0,8.0),1.05,2.0,false)
+                        if(rects.empty()||weights.empty()) emptyList() else
+                            rects.toArray().zip(weights.toArray().toList()).sortedByDescending { it.second }.map { (r,_) ->
+                                PersonBox(frame,r.x.toFloat(),r.y.toFloat(),r.width.toFloat(),r.height.toFloat())
+                            }
                     }
                     val kept=mutableListOf<PersonBox>()
                     candidates.forEach { box->if(kept.none { SinglePersonTrack.overlap(it,box)>.4f })kept+=box }
@@ -331,9 +386,13 @@ class DeviceVideoPipeline(private val gate:ConsentGate) {
                     if(frame%5==0||frame==frames-1)onPhase("Localizando uma pessoa no celular: ${(frame+1)*100/frames}%")
                 }finally{rgba.release();rgb.release();small.release();gray.release();rects.release();weights.release()}
             }
+            android.util.Log.i("PocketPoseDetector",
+                "backend="+backend+" frames="+frames+" detectorFrames="+detected+
+                    " boxes="+output.size+" coveragePercent="+(output.size*100/frames)+
+                    " elapsedMs="+(android.os.SystemClock.elapsedRealtime()-startedAt))
             require(output.isNotEmpty()) { "Nenhuma pessoa detectada. Use um vídeo com o corpo inteiro visível e bem iluminado." }
             onPhase("Verificando rastreamento: 100%")
             return output to detected
-        }finally{retriever.release();previousGray.release()}
+        }finally{mlkit?.close();retriever.release();previousGray.release()}
     }
 }

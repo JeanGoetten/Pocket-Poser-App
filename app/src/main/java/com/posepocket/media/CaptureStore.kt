@@ -50,8 +50,8 @@ class CaptureStore(
     }
 
     /** Removes captures older than [maxAgeMillis] (interrupted or abandoned recordings). */
-    fun purgeStale(maxAgeMillis: Long = STALE_AFTER_MILLIS, now: Long = System.currentTimeMillis()) {
-        directory.listFiles().orEmpty().forEach { if (now - it.lastModified() > maxAgeMillis) it.delete() }
+    fun purgeStale(maxAgeMillis: Long = STALE_AFTER_MILLIS, now: Long = System.currentTimeMillis(), protectedUri:Uri?=null) {
+        directory.listFiles().orEmpty().forEach { if (now - it.lastModified() > maxAgeMillis && it.name!=protectedUri?.lastPathSegment) it.delete() }
     }
 
     fun cameraAppAvailable(packageManager: PackageManager): Boolean =

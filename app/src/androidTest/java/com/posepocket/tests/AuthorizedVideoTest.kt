@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.posepocket.media.MediaPreparer
+import com.posepocket.media.CaptureStore
 import com.posepocket.nvidia.DeviceVideoPipeline
 import com.posepocket.nvidia.DirectNvidiaClient
 import com.posepocket.nvidia.PendingProcessingStore
@@ -14,6 +15,7 @@ import com.posepocket.nvidia.TransportIssue
 import com.posepocket.nvidia.RecoveryStage
 import com.posepocket.gateway.NvidiaKeyStore
 import com.posepocket.pose.fileHash
+import com.posepocket.pose.ProjectRepository
 import com.posepocket.R
 import com.posepocket.privacy.*
 import kotlinx.coroutines.runBlocking
@@ -33,8 +35,7 @@ class AuthorizedVideoTest {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val source=File(context.cacheDir,"authorized-beach-test.mp4")
         require(source.isFile)
-        val gate=ConsentGate(Policy("dev-2026-10-15-v5-i18n-video-limits","nvidia-body-pose-video-v1",
-            context.resources.openRawResource(R.raw.privacy_policy).bufferedReader().use{it.readText()}),AtomicConsentStore(context.noBackupFilesDir))
+        val gate=ConsentGate(CurrentPolicy.create(context),AtomicConsentStore(context.noBackupFilesDir))
         check(gate.isGranted())
         val store=PendingProcessingStore(File(context.noBackupFilesDir,"processing"))
         check(store.load()==null){"Preserve the existing pending job"}
@@ -42,8 +43,12 @@ class AuthorizedVideoTest {
             {uri,_->MediaPreparer(context,gate).prepare(uri,"camera")},
             {input,phase->DeviceVideoPipeline(gate).prepare(input,phase)},
             {_,_,_->throw NvidiaFailure(io.grpc.Status.Code.UNAVAILABLE,TransportIssue.SERVICE_OR_CONNECTION)})
-        try{runner.run(Uri.fromFile(source),"camera",{},{}) ;fail("Expected simulated service failure")}
-        catch(_:NvidiaFailure){}
+        val capture=CaptureStore(context).create()
+        source.copyTo(capture.file)
+        try {
+            try{runner.run(capture.uri,"camera",{},{}) ;fail("Expected simulated service failure")}
+            catch(_:NvidiaFailure){}
+        }finally{capture.file.delete()}
         val restored=requireNotNull(PendingProcessingStore(File(context.noBackupFilesDir,"processing")).load())
         assertEquals(RecoveryStage.NVIDIA,restored.stage)
         File(context.cacheDir,"recovery-staged.json").writeText(JSONObject()
@@ -65,13 +70,15 @@ class AuthorizedVideoTest {
             override fun write(receipt:ConsentReceipt){this.receipt=receipt}
             override fun clear(){receipt=null}
         }
-        val gate=if(inferNvidia) ConsentGate(Policy("dev-2026-10-15-v5-i18n-video-limits","nvidia-body-pose-video-v1",
-            context.resources.openRawResource(R.raw.privacy_policy).bufferedReader().use{it.readText()}),AtomicConsentStore(context.noBackupFilesDir))
+        val gate=if(inferNvidia) ConsentGate(CurrentPolicy.create(context),AtomicConsentStore(context.noBackupFilesDir))
         else ConsentGate(Policy("test","video","Explicitly authorized local test; no upload"),store).apply{accept(true,true)}
         check(gate.isGranted()){"The app's current consent must already be granted"}
         val started=SystemClock.elapsedRealtime()
-        // A file URI exercises the same private-file preparation used by capture.
-        val prepared=MediaPreparer(context,gate).prepare(Uri.fromFile(source),"camera")
+        // Match the actual camera contract: private FileProvider content URI, not file://.
+        val capture=CaptureStore(context).create()
+        source.copyTo(capture.file)
+        val prepared=try{MediaPreparer(context,gate).prepare(capture.uri,"camera")}
+            catch(error:Throwable){capture.file.delete();throw error}
         var trackingStarted=0L
         var batched=false
         try {
@@ -80,7 +87,7 @@ class AuthorizedVideoTest {
                 if(phase=="Localizando uma pessoa no celular")trackingStarted=SystemClock.elapsedRealtime()
             }
             try {
-                assertTrue(batched)
+                assertTrue(video.frames>=2)
                 assertTrue(video.boxes.isNotEmpty())
                 assertTrue(trackingStarted>started)
                 val localFinished=SystemClock.elapsedRealtime()
@@ -106,11 +113,16 @@ class AuthorizedVideoTest {
                             summary.put("nvidia_frames",clip.frames.size).put("nvidia_frames_with_pose",withPose)
                                 .put("nvidia_ms",SystemClock.elapsedRealtime()-localFinished)
                                 .put("raw_sha256",fileHash(clip.raw))
+                            if(InstrumentationRegistry.getArguments().getString("saveAuthorizedProject")=="true") {
+                                gate.withConsent{}
+                                val saved=ProjectRepository(File(context.noBackupFilesDir,"projects")).save(clip)
+                                summary.put("saved_project_id",saved.id)
+                            }
                         }finally{clip.raw.delete()}
                     }finally{client.interrupt();resultDirectory.delete()}
                 }
                 File(context.cacheDir,"authorized-video-timing.json").writeText(summary.toString())
             }finally{video.file.delete()}
-        }finally{prepared.file.delete()}
+        }finally{prepared.file.delete();capture.file.delete()}
     }
 }

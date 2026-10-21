@@ -36,3 +36,7 @@ secrets.properties
 # Build binaries belong in releases, not Git history
 *.apk
 *.aab
+
+# Upstream ML weights: not redistributable in this source snapshot without review
+/app/src/main/assets/*.task
+**/*.apk

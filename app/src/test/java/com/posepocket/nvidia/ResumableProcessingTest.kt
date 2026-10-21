@@ -94,4 +94,36 @@ class ResumableProcessingTest {
         assertTrue(failure.message!!.contains("DNS"));assertFalse(failure.toString().contains(secret));assertNull(failure.cause)
         assertTrue(NvidiaFailure(Status.Code.UNAVAILABLE,TransportIssue.SERVICE_OR_CONNECTION).message!!.contains("internet funcionando"))
     }
+    @Test fun trackingFailureRestartsFromDurableEncodedVideoAndPreservesTrim()=runBlocking {
+        val range=com.posepocket.media.TrimRange(500_000,1_000_000)
+        var encodes=0;var tracks=0
+        val runner=ResumableProcessing(gate,store,{_,_->input().copy(trim=range)},
+            {_,_->error("Legacy combined pipeline must not run")},
+            {_,_,_->syntheticDemo(File(root,"result.jsonl"))},
+            encode={_,_->encodes++;val v=video();NormalizedVideo(v.file,v.hash,v.frames,v.width,v.height)},
+            locate={_,_->tracks++;error("Synthetic tracking interruption")})
+        try{runner.run(Uri.parse("content://fixture/video"),"attachment",{},{})}catch(_:IllegalStateException){}
+        val restored=PendingProcessingStore(directory).load()!!
+        assertEquals(RecoveryStage.TRACK,restored.stage)
+        assertEquals(range,restored.input.trim)
+        val hash=restored.encoded!!.hash
+        ResumableProcessing(gate,PendingProcessingStore(directory),{_,_->error("No import")},
+            {_,_->error("No combined pipeline")},{_,_,_->syntheticDemo(File(root,"result.jsonl"))},
+            encode={_,_->error("No encoding")},locate={v,_->
+                tracks++;assertEquals(hash,fileHash(v.file))
+                DeviceVideo(v.file,v.hash,v.frames,v.width,v.height,listOf(PersonBox(0,1f,2f,100f,200f)))
+            }).run(null,null,{},{})
+        assertEquals(1,encodes);assertEquals(2,tracks)
+        assertEquals(RecoveryStage.NVIDIA,store.load()!!.stage)
+    }
+    @Test fun lowCoverageStopsBeforeUploadAndExplicitRetryUsesSameVideo()=runBlocking {
+        val runner=ResumableProcessing(gate,store,{_,_->input()},{_,_->video()},
+            {_,_,_->sends++;syntheticDemo(File(root,"result.jsonl"))},
+            reviewTracking={v->assertEquals(50,TrackingSummary.from(v).percent);throw TrackingReviewRequired()})
+        try{runner.run(Uri.parse("content://fixture/video"),"attachment",{},{});fail("Expected review")}
+        catch(_:TrackingReviewRequired){}
+        assertEquals(0,sends);assertEquals(RecoveryStage.NVIDIA,store.load()!!.stage)
+        runner.run(null,null,{},{})
+        assertEquals(1,sends);assertEquals(1,normalizations);assertEquals(1,preparations)
+    }
 }

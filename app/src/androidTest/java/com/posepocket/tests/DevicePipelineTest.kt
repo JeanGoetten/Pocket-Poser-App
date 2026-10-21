@@ -4,6 +4,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.posepocket.gateway.NvidiaKeyStore
 import com.posepocket.media.PreparedVideo
+import com.posepocket.media.FocusWindow
 import com.posepocket.nvidia.DeviceVideoPipeline
 import com.posepocket.pose.fileHash
 import com.posepocket.privacy.*
@@ -86,6 +87,69 @@ class DevicePipelineTest {
             }
             assertTrue(phases.joinToString(),phases.any{it.contains("leitura em lotes")})
             assertTrue(phases.any{it.startsWith("Localizando uma pessoa")})
+            assertEquals(listOf("synthetic.mp4"),folder.listFiles().orEmpty().map{it.name})
+        }finally{folder.deleteRecursively()}
+    }
+
+    /** A focus selection must force actual video recoding, including for otherwise compatible CFR input. */
+    @Test fun selectedFocusRegionChangesEncodedVideoDimensionsBeforeTracking()=runBlocking {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val folder=File(instrumentation.targetContext.cacheDir,"focus-check-${UUID.randomUUID()}").apply{mkdirs()}
+        val file=File(folder,"synthetic.mp4")
+        instrumentation.context.assets.open("synthetic-cfr-test.mp4").use { input ->
+            file.outputStream().use(input::copyTo)
+        }
+        val sourceHash=fileHash(file)
+        val focus=FocusWindow(.1f,.1f,.9f,.9f)
+        val retriever=android.media.MediaMetadataRetriever()
+        val originalWidth:Int
+        val originalHeight:Int
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val bitmap=requireNotNull(retriever.getFrameAtTime(0,android.media.MediaMetadataRetriever.OPTION_CLOSEST))
+            originalWidth=bitmap.width;originalHeight=bitmap.height
+            bitmap.recycle()
+        }finally{retriever.release()}
+        val bounds=focus.pixelBounds(originalWidth,originalHeight)
+        val geometry=com.posepocket.media.VideoGeometry.fit(bounds[2],bounds[3])
+        val expectedWidth=geometry.width
+        val expectedHeight=geometry.height
+        val store=object:ConsentStore {
+            var value:ConsentReceipt?=null
+            override fun read()=value
+            override fun write(receipt:ConsentReceipt){value=receipt}
+            override fun clear(){value=null}
+        }
+        val gate=ConsentGate(Policy("test","video","Synthetic focus test; no network"),store).apply {accept(true,true)}
+        val phases=mutableListOf<String>()
+        var observed:Pair<Int,Int>?=null
+        try {
+            try {
+                val video=DeviceVideoPipeline(gate).prepare(
+                    PreparedVideo(file,sourceHash,"attachment",focus=focus)
+                ) { phase ->
+                    phases+=phase
+                    if(phase=="Localizando uma pessoa no celular") {
+                        val normalized=requireNotNull(folder.listFiles().orEmpty().firstOrNull {
+                            it.name.endsWith("-cfr.mp4")
+                        })
+                        val extractor=android.media.MediaExtractor()
+                        try {
+                            extractor.setDataSource(normalized.absolutePath)
+                            val format=extractor.getTrackFormat(0)
+                            observed=format.getInteger(android.media.MediaFormat.KEY_WIDTH) to
+                                format.getInteger(android.media.MediaFormat.KEY_HEIGHT)
+                        }finally{extractor.release()}
+                    }
+                }
+                video.file.delete()
+            }catch(error:IllegalArgumentException) {
+                assertTrue(error.message.orEmpty().startsWith("Nenhuma pessoa detectada"))
+            }
+            assertEquals(expectedWidth to expectedHeight,observed)
+            assertFalse("Focus must bypass CFR copy shortcut",
+                phases.any { it.contains("preservando quadros") })
+            assertEquals(sourceHash,fileHash(file))
             assertEquals(listOf("synthetic.mp4"),folder.listFiles().orEmpty().map{it.name})
         }finally{folder.deleteRecursively()}
     }

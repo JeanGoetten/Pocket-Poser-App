@@ -47,8 +47,7 @@ fun Workspace(model:PocketViewModel) {
     var discardProcessing by remember { mutableStateOf(false) }
     var delete by remember { mutableStateOf<String?>(null) }
     var deleteAll by remember { mutableStateOf(false) }
-    var exportFile by remember { mutableStateOf<File?>(null) }
-    var exportTemporary by remember { mutableStateOf(false) }
+    val layerExports=remember { com.posepocket.pose.LayerExportStore(context.noBackupFilesDir) }
     val recorder=rememberLauncherForActivityResult(RecordVideo()) { recorded ->
         val file=pendingCapture?.let(captures::fileNamed);pendingCapture=null
         when {
@@ -69,7 +68,7 @@ fun Workspace(model:PocketViewModel) {
         }
     }
     val exportResult:(android.net.Uri?)->Unit={ uri ->
-        val original=exportFile;exportFile=null;val remove=exportTemporary;exportTemporary=false
+        val original=layerExports.load()
         if(uri!=null&&original!=null)scope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -84,18 +83,23 @@ fun Workspace(model:PocketViewModel) {
             }catch(_:Exception) {
                 withContext(NonCancellable+Dispatchers.IO){try{DocumentsContract.deleteDocument(context.contentResolver,uri)}catch(_:Exception){}}
                 model.report(context.getString(R.string.export_failed))
-            }finally{if(remove)original.delete()}
+            }finally{layerExports.clear()}
         }
-        else if(remove)original?.delete()
+        else {
+            layerExports.clear()
+            if(uri!=null)scope.launch {
+                withContext(NonCancellable+Dispatchers.IO){try{DocumentsContract.deleteDocument(context.contentResolver,uri)}catch(_:Exception){}}
+                model.report(context.getString(R.string.export_failed))
+            }
+        }
     }
-    val exporter=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-ndjson"),exportResult)
     val layerExporter=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"),exportResult)
     Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         state.error?.let { InlineNotice(it,NoticeTone.ERROR,model::dismissNotice) }
         state.message?.let { InlineNotice(it,NoticeTone.INFO,model::dismissNotice) }
         when {
             state.review!=null -> ReviewHost(model,requireNotNull(state.review))
-            state.busy&&state.clip==null -> ProcessingScreen(state.phase,state.stage,canCancel=state.stage!=null,onCancel={model.cancel()},progress=state.progress)
+            state.busy&&state.clip==null -> ProcessingScreen(state.phase,state.stage,canCancel=state.stage!=null,onCancel={model.cancel()},progress=state.progress,offline=state.engine.offline)
             state.clip!=null -> {
                 val clip=requireNotNull(state.clip)
                 if(state.busy){Text(state.phase);LinearProgressIndicator(Modifier.fillMaxWidth())}
@@ -104,7 +108,8 @@ fun Workspace(model:PocketViewModel) {
                 PosePreview(clip,state.savedId!=null,onSave={model.save()},onDiscard=reset,onRedo=redo,onExport={
                     try { model.gate.withConsent { }
                         scope.launch {
-                            val shared=File(context.cacheDir,"shared/${java.util.UUID.randomUUID()}/pocket-poser-original.jsonl")
+                            val exportName=if(clip.frameFilters==com.posepocket.pose.FrameFilters()) "pocket-poser-original.jsonl" else "pocket-poser-filtered.jsonl"
+                            val shared=File(context.cacheDir,"shared/${java.util.UUID.randomUUID()}/$exportName")
                             var launched=false
                             try {
                                 withContext(Dispatchers.IO){
@@ -137,21 +142,23 @@ fun Workspace(model:PocketViewModel) {
                     }
                     catch(_:Exception){model.report(context.getString(R.string.consent_invalid_review))}
                 },enabled=!state.busy,extras={
-                    if(state.editing)EditControls(model,!state.busy)
+                    if(clip.generator!="NVIDIA"&&!clip.demo) {
+                        Text(stringResource(R.string.engine_uncalibrated_preview),
+                            style=MaterialTheme.typography.bodySmall,
+                            color=MaterialTheme.colorScheme.error)
+                    }else if(state.editing)EditControls(model,!state.busy)
                     else TextButton(enabled=!state.busy,onClick=model::startEditing){Text(stringResource(R.string.enable_advanced_edit))}
                     clip.correctionLayer?.let { layer -> TextButton(enabled=!state.busy,onClick={scope.launch {
                     try {
                         model.gate.withConsent { }
-                        val file=withContext(Dispatchers.IO) {
-                            File(context.cacheDir,"results").apply { mkdirs() }.let { File(it,"layer-${java.util.UUID.randomUUID()}.json") }.apply { writeText(layer) }
-                        }
-                        exportFile=file;exportTemporary=true;layerExporter.launch("pocket-poser-corrections.json")
+                        withContext(Dispatchers.IO) { layerExports.create(layer) }
+                        layerExporter.launch("pocket-poser-corrections.json")
                     }catch(_:Exception){model.report(context.getString(R.string.layer_export_failed))}
                 }}){Text(stringResource(R.string.export_layer))} }
-                },onFiltersChange=model::setFrameFilters)
+                },onFiltersChange=model::setFrameFilters,identity=state.previewIdentity?:clip.raw.absolutePath)
             }
             state.recovery!=null&&!state.library -> ProcessingRecovery(requireNotNull(state.recovery),model::retryProcessing,
-                {discardProcessing=true},{nvidiaSettings=true},{model.showLibrary(true)})
+                {discardProcessing=true},{nvidiaSettings=true},{model.showLibrary(true)},tracking=state.tracking)
             state.library -> LibraryScreen(state.projects,onBack={model.showLibrary(false)},onOpen=model::open,onDelete={delete=it},onDeleteAll={deleteAll=true},gridState=libraryScroll)
             else -> EntryScreen(
                 enabled=initialized,cameraAvailable=cameraAppAvailable,keyConfigured=keyConfigured,projectCount=state.projects.size,
@@ -170,6 +177,7 @@ fun Workspace(model:PocketViewModel) {
                     }
                 },
                 onKey={nvidiaSettings=true},onDemo={model.demo()},onLibrary={model.showLibrary(true)},
+                engine=state.engine,onEngineChange=model::chooseEngine,
             )
         }
     }

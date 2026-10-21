@@ -13,9 +13,9 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 
-enum class RecoveryStage { NORMALIZE, NVIDIA, INVALID }
-data class PendingProcessing(val input:PreparedVideo,val video:DeviceVideo?=null) {
-    val stage get()=if(video==null)RecoveryStage.NORMALIZE else RecoveryStage.NVIDIA
+enum class RecoveryStage { NORMALIZE, TRACK, NVIDIA, INVALID }
+data class PendingProcessing(val input:PreparedVideo,val video:DeviceVideo?=null,val encoded:NormalizedVideo?=null) {
+    val stage get()=when { video!=null->RecoveryStage.NVIDIA;encoded!=null->RecoveryStage.TRACK;else->RecoveryStage.NORMALIZE }
 }
 
 /** One explicit pending job, private and excluded from backup/cache eviction.
@@ -27,9 +27,19 @@ class PendingProcessingStore(private val root:File) {
         check(load()==null) { "Descarte ou retome o processamento anterior primeiro." }
         check(root.isDirectory||root.mkdirs())
         copy(input.file,File(root,"input.mp4"),250_000_000)
-        val value=JSONObject().put("schema",1).put("source",input.source).put("input_hash",input.hash)
+        val value=JSONObject().put("schema",2).put("source",input.source).put("input_hash",input.hash)
             .put("original_hash",input.originalHash?:JSONObject.NULL)
             .put("focus",input.focus?.let{ JSONArray(listOf(it.left,it.top,it.right,it.bottom)) }?:JSONObject.NULL)
+            .put("trim",input.trim?.let{ JSONArray(listOf(it.startUs,it.endUs)) }?:JSONObject.NULL)
+        write(value)
+        return requireNotNull(load())
+    }
+    @Synchronized fun encoded(video:NormalizedVideo):PendingProcessing {
+        requireNotNull(load())
+        copy(video.file,File(root,"normalized.mp4"),50_000_000)
+        val value=JSONObject(String(manifest.readFully(),Charsets.UTF_8))
+        value.put("video",JSONObject().put("hash",video.hash).put("frames",video.frames)
+            .put("width",video.width).put("height",video.height))
         write(value)
         return requireNotNull(load())
     }
@@ -51,7 +61,7 @@ class PendingProcessingStore(private val root:File) {
         val bytes=manifest.readFully()
         require(bytes.size<=8_000_000)
         val value=JSONObject(String(bytes,Charsets.UTF_8))
-        require(value.getInt("schema")==1)
+        require(value.getInt("schema")==2) { "O processamento guardado usa formato antigo. Descarte-o e revise o vídeo novamente." }
         val source=value.getString("source");require(source in listOf("camera","attachment"))
         val input=File(root,"input.mp4")
         checkFile(input,value.getString("input_hash"),250_000_000)
@@ -60,13 +70,18 @@ class PendingProcessingStore(private val root:File) {
             require(it.length()==4)
             com.posepocket.media.FocusWindow(it.getDouble(0).toFloat(),it.getDouble(1).toFloat(),it.getDouble(2).toFloat(),it.getDouble(3).toFloat())
         }
+        val trim=value.optJSONArray("trim")?.let {
+            require(it.length()==2)
+            com.posepocket.media.TrimRange(it.getLong(0),it.getLong(1))
+        }
         val prepared=PreparedVideo(input,value.getString("input_hash"),source,
-            if(value.isNull("original_hash"))null else value.getString("original_hash"),focus)
+            if(value.isNull("original_hash"))null else value.getString("original_hash"),focus,trim)
         val data=value.optJSONObject("video")?:return PendingProcessing(prepared)
         val file=File(root,"normalized.mp4");checkFile(file,data.getString("hash"),50_000_000)
         val frames=data.getInt("frames");require(frames in 2..18000)
         val width=data.getInt("width");val height=data.getInt("height")
         require(width in 64..720&&height in 128..720)
+        if(!data.has("boxes"))return PendingProcessing(prepared,encoded=NormalizedVideo(file,data.getString("hash"),frames,width,height))
         val array=data.getJSONArray("boxes");require(array.length() in 1..frames)
         val boxes=(0 until array.length()).map { index ->
             val row=array.getJSONArray(index)
@@ -86,6 +101,7 @@ class PendingProcessingStore(private val root:File) {
         }
     }
     private fun copy(source:File,target:File,maxBytes:Long) {
+        if(source.canonicalFile==target.canonicalFile)return
         val partial=File(root,"${target.name}.partial")
         try {
             source.inputStream().use { input -> FileOutputStream(partial).use { out -> input.copyTo(out);out.fd.sync() } }
@@ -107,6 +123,9 @@ class ResumableProcessing(
     private val prepare:suspend (Uri,String)->PreparedVideo,
     private val normalize:suspend (PreparedVideo,(String)->Unit)->DeviceVideo,
     private val infer:suspend (DeviceVideo,PreparedVideo,(String)->Unit)->PoseClip,
+    private val encode:(suspend (PreparedVideo,(String)->Unit)->NormalizedVideo)?=null,
+    private val locate:(suspend (NormalizedVideo,(String)->Unit)->DeviceVideo)?=null,
+    private val reviewTracking:(DeviceVideo)->Unit={},
 ) {
     suspend fun run(uri:Uri?,source:String?,phase:(String)->Unit,checkpoint:(RecoveryStage)->Unit):PoseClip {
         currentCoroutineContext().ensureActive();gate.withConsent { }
@@ -118,9 +137,21 @@ class ResumableProcessing(
         checkpoint(job.stage)
         currentCoroutineContext().ensureActive();gate.withConsent { }
         if(job.video==null) {
-            val normalized=normalize(job.input) { phase("Etapa 2/3 — $it") }
-            try { job=store.normalized(normalized) }finally{normalized.file.delete()}
+            val localPhase:(String)->Unit={phase("Etapa 2/3 — $it")}
+            if(encode!=null&&locate!=null) {
+                if(job.encoded==null) {
+                    val encoded=encode.invoke(job.input,localPhase)
+                    try { job=store.encoded(encoded) }finally{encoded.file.delete()}
+                    checkpoint(job.stage)
+                }
+                val tracked=locate.invoke(requireNotNull(job.encoded),localPhase)
+                job=store.normalized(tracked)
+            }else {
+                val normalized=normalize(job.input,localPhase)
+                try { job=store.normalized(normalized) }finally{normalized.file.delete()}
+            }
             checkpoint(job.stage)
+            reviewTracking(requireNotNull(job.video))
         }
         currentCoroutineContext().ensureActive();gate.withConsent { }
         phase("Etapa 3/3 — Enviando vídeo já preparado à NVIDIA")

@@ -2,31 +2,44 @@
 
 **Website:** https://jeangoetten.github.io/Pocket-Poser-App/
 
-Experimental Android application for extracting and viewing 3D skeletal motion from a video.
+Pocket Poser is an experimental Android application for processing one-person video into skeletal pose sequences. This independently curated public-source snapshot is **v0.7.0-beta.1 (source preview)**. It preserves an independent, sanitized Git history.
 
-A single-person video can be imported or captured through Android's camera application. The user reviews the video, selects a time range and an optional focus window, and explicitly starts processing. Video preparation and tracking run locally; NVIDIA Body Pose inference requires the user's own NVIDIA API key. Results are displayed as a Nova-77 skeleton and can be saved or exported as JSONL. Empty or duplicate pose frames can be omitted from the preview and exported sequence without replacing the source capture.
+## Status and downloads
 
-## Project website
+- **Latest public APK:** v0.6.0-beta.1, development-signed, NVIDIA-only pipeline. Download it from [GitHub Releases](https://github.com/JeanGoetten/Pocket-Poser-App/releases).
+- **Latest source:** v0.7.0-beta.1, including three selectable engines (NVIDIA, ML Kit and MediaPipe Lite).
+- **No 0.7.0 public APK yet.** The MediaPipe Lite model bundle is NOT committed here. Redistribution terms for the exact bundle, SDK telemetry disclosures, legal privacy review and release-signing readiness require further verification before publishing a new public APK.
 
-[Open the Pocket Poser website](https://jeangoetten.github.io/Pocket-Poser-App/)
+These versions are not interchangeable. The latest public APK does **not** contain the newer offline modes.
 
-The site contains installation and build instructions and links to experimental APKs published through GitHub Releases.
+## Engines
+
+| Engine | Processing | Output | Requirements |
+|---|---|---|---|
+| NVIDIA Nova-77 | Remote | Native 77-joint skeleton and rotations | User's own NVIDIA API key and separate remote-processing consent |
+| Google ML Kit | On-device | 33 estimated body landmarks (3D approximation) | Bundled SDK |
+| MediaPipe Pose Landmarker Lite | On-device | 33 estimated body landmarks and visibility confidence | Model file installed locally in build, see docs/MODELS.md |
+
+Offline processing does not transmit input video to NVIDIA. Some underlying SDKs may perform independent diagnostics or usage-metric communications; consult [Privacy](docs/PRIVACY.md). Landmark coverage is not the same as movement fidelity. Missing or occluded points can be inaccurate; low-visibility estimates are rendered with dashed lines. The 33-point skeleton is not converted into a fake 77-joint hierarchy and is **not** a Unity-ready animated rig.
+
+## Interface
+
+The [project website](https://jeangoetten.github.io/Pocket-Poser-App/) illustrates an actual Pocket Poser synthetic pose preview. That image is illustrative; it is not evidence of reliable real-video reconstruction or of the latest 0.7.0 interface.
 
 ## Install
 
-1. Download the APK from the website or from [GitHub Releases](https://github.com/JeanGoetten/Pocket-Poser-App/releases) when one is available.
-2. Install it on a compatible Android 8.0+ ARM device. Android may request permission to install from the selected source.
-3. Review the privacy notice. For remote inference, configure your own NVIDIA API key and confirm the applicable terms for the media you process.
+The only public pre-release binary currently available is v0.6.0-beta.1. Install it from [GitHub Releases](https://github.com/JeanGoetten/Pocket-Poser-App/releases) on an Android 8.0+ ARM device. It uses development signing, is not production software, and may be superseded by newer unpublished test builds.
 
-## Build from source
+## Build this source snapshot
 
-Requirements: JDK 17, Android SDK Platform 35, Build Tools 35.0.0, and an Android SDK installation configured through `ANDROID_HOME` or a local, untracked `local.properties`.
+Requires JDK 17, Android SDK Platform 35 and Build Tools 35.0.0. Set ANDROID_HOME (or use a local, untracked local.properties). **Before building**, obtain the MediaPipe Lite task asset from its official URL and verify its SHA-256 exactly as described in [Model setup and provenance](docs/MODELS.md). Without it, the build deliberately stops with a clear error.
 
 Windows / PowerShell:
 
 ```powershell
 git clone https://github.com/JeanGoetten/Pocket-Poser-App.git
 cd Pocket-Poser-App
+# Follow docs/MODELS.md first to obtain/verify the local model file.
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
 ```
 
@@ -35,27 +48,20 @@ Linux / macOS:
 ```sh
 git clone https://github.com/JeanGoetten/Pocket-Poser-App.git
 cd Pocket-Poser-App
+# Follow docs/MODELS.md first to obtain/verify the local model file.
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
 
-Debug APK output: `app/build/outputs/apk/debug/app-debug.apk`. Development-signed debug packages are for testing only, including experimental prerelease downloads; they are not production builds.
+Debug APK output is app/build/outputs/apk/debug/app-debug.apk. A locally built APK is signed with a development key and does not imply that the exact MediaPipe model's redistribution permissions have been cleared. Do not publish that resulting APK without reviewing applicable model and SDK terms.
 
-## Scope and limitations
+## Known limitations
 
-The tracker is experimental and may not detect every frame. NVIDIA processing is a third-party service subject to account terms, availability, usage quotas and possible charges. The export is pose data, not an animated video. The project includes an offline synthetic demonstration.
-
-## License
-
-Original project source is made available under [PolyForm Noncommercial 1.0.0](LICENSE.md). Personal and educational noncommercial uses are permitted subject to the license terms; commercial uses are not licensed. This is **source-available**, not OSI-approved open-source software.
-
-Third-party code, SDKs, software interfaces and assets retain their respective licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).
+This remains a beta development application. Only one person is supported; partially occluded limbs may be inferred inaccurately. Local 3D landmarks do not directly provide calibrated bone rotations, retargeting, glTF/BVH/FBX motion, or a character animation for Unity. Real NVIDIA inference depends on service availability, account terms, quota, possible charges and consent. The export is pose data, not an animated video.
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Privacy overview](docs/PRIVACY.md) · [Security](docs/SECURITY.md)
+[Architecture](docs/ARCHITECTURE.md) · [Privacy](docs/PRIVACY.md) · [Security](docs/SECURITY.md) · [Model setup](docs/MODELS.md) · [0.7.0 source notes](docs/releases/v0.7.0-beta.1-source.md) · [Third-party notices](THIRD_PARTY_NOTICES.md).
 
-## Privacy
+## Licensing and publication
 
-The app processes video on the device and sends video without audio, tracking boxes and technical metadata to NVIDIA when authorized. Users must have the necessary rights to footage, including footage of other people. Remote data handling is subject to NVIDIA's applicable terms. No promise of remote deletion is made.
-
-A finalized legal privacy policy and production-ready signing process are pending. The available beta APK is signed with a development key and must not be treated as a production release.
+Original source is made available under [PolyForm Noncommercial 1.0.0](LICENSE.md). It permits the relevant noncommercial uses subject to license terms; this is source-available, **not** OSI-approved open source. Upstream SDKs, tools and model bundles have independent licenses and usage rules. The public repository excludes private project history, developer diagnostics, real-person recordings, credentials, device identifiers, and the MediaPipe model binary. New releases require separate technical and legal review.

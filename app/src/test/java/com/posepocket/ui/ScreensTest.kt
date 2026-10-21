@@ -5,6 +5,10 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +16,7 @@ import com.posepocket.ProcessingStage
 import com.posepocket.ProcessingProgress
 import com.posepocket.ProcessingSubstep
 import com.posepocket.pose.SavedProject
+import com.posepocket.pose.ProcessingEngine
 import com.posepocket.ui.theme.PocketPoserTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -36,6 +41,30 @@ class ScreensTest {
         compose.onNodeWithTag("entry_record").performClick()
         assertEquals(1, attach); assertEquals(1, record)
         compose.onNodeWithText("Chave NVIDIA salva").assertExists()
+    }
+    @Test @Config(sdk=[35],qualifiers="pt-rBR-w820dp-h400dp-land")
+    fun landscapeEntryKeepsSourcesAndLibraryVisibleInShortSpace() {
+        compose.setContent{PocketPoserTheme{Box(Modifier.height(280.dp)) {
+            EntryScreen(true,true,true,3,{},{},{},{},{})
+        }}}
+        compose.onNodeWithTag("entry_attach").assertIsDisplayed()
+        compose.onNodeWithTag("entry_record").assertIsDisplayed()
+        compose.onNodeWithTag("entry_library").assertIsDisplayed()
+        compose.onNodeWithTag("entry_demo").assertIsDisplayed()
+        assertEquals(compose.onNodeWithTag("entry_attach").fetchSemanticsNode().boundsInRoot.top,
+            compose.onNodeWithTag("entry_record").fetchSemanticsNode().boundsInRoot.top)
+    }
+
+    @Test fun selectedEngineCanBeChangedWithoutStartingAnUpload() {
+        var selected:ProcessingEngine?=null
+        compose.setContent { PocketPoserTheme {
+            EntryScreen(true,true,true,0,{},{},{},{},{},
+                engine=ProcessingEngine.NVIDIA,onEngineChange={selected=it})
+        } }
+        compose.onNodeWithTag("engine_mediapipe").performScrollTo().performClick()
+        assertEquals(ProcessingEngine.MEDIAPIPE,selected)
+        compose.onNodeWithTag("engine_ml_kit").performScrollTo().performClick()
+        assertEquals(ProcessingEngine.ML_KIT,selected)
     }
 
     @Test fun recordIsDisabledWithoutCameraAppButAttachStillWorks() {
@@ -86,10 +115,21 @@ class ScreensTest {
         compose.setContent{PocketPoserTheme{ProcessingScreen("",progress.value.step.stage,true,{},progress=progress.value)}}
         compose.onNodeWithText("Normalizar quadros").assertExists()
         compose.onNodeWithText("42%").assertExists()
-        compose.onNodeWithTag("processing_percent_bar").assertExists()
+        compose.onNodeWithTag("processing_percent",useUnmergedTree=true).assertExists()
+        compose.onNodeWithTag("processing_percent_bar").assertDoesNotExist()
         compose.runOnIdle{progress.value=ProcessingProgress(ProcessingSubstep.WAIT)}
         compose.onNodeWithText("Aguardando a NVIDIA").assertExists()
-        compose.onNodeWithTag("processing_percent").assertDoesNotExist()
+        compose.onNodeWithTag("processing_percent",useUnmergedTree=true).assertDoesNotExist()
+        compose.onNodeWithTag("processing_percent_bar").assertDoesNotExist()
+    }
+
+    @Test fun changingStagesDoesNotMoveSubstepRows() {
+        val progress=mutableStateOf(ProcessingProgress(ProcessingSubstep.NORMALIZE,20))
+        compose.setContent { PocketPoserTheme { ProcessingScreen("",progress.value.step.stage,true,{},progress=progress.value) } }
+        val before=compose.onNodeWithText("Normalizar quadros").fetchSemanticsNode().boundsInRoot.top
+        compose.runOnIdle { progress.value=ProcessingProgress(ProcessingSubstep.WAIT) }
+        val after=compose.onNodeWithText("Normalizar quadros").fetchSemanticsNode().boundsInRoot.top
+        assertEquals(before,after)
         compose.onNodeWithTag("processing_percent_bar").assertDoesNotExist()
     }
 

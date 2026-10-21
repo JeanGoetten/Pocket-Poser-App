@@ -15,6 +15,13 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 The client license does not grant access to NVIDIA services or models and does not replace the account terms. No NVIDIA model weights, NVIDIA sample videos, images of real individuals, MediaPipe models or Godot source are included. The demonstration fixtures are synthetic and are labeled as such.
+## New offline components in the v0.7 source preview
+
+- Google ML Kit Pose Detection 18.0.0-beta5: upstream Google SDK usage/redistribution terms and [data disclosure requirements](https://developers.google.com/ml-kit/android-data-disclosure) apply.
+- Google MediaPipe Tasks Vision 0.10.35: SDK Apache-2.0, including applicable NOTICE requirements. Model bundles are separate artifacts.
+- MediaPipe Pose Landmarker Lite float16 v1: exact upstream model SHA-256 is recorded in [docs/MODELS.md](docs/MODELS.md). **The model binary is not part of this public repository or any new public APK.** Its artifact-specific redistribution terms remain unverified; no license claim is made for its weights.
+- Retained Nova-77 interfaces/derivatives remain governed by their NVIDIA upstream notices and service account rules.
+
 ## Android dependencies
 
 | Component | License |

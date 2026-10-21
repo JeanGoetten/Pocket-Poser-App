@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.posepocket.media.TrimRange
+import com.posepocket.media.FocusWindow
+import androidx.compose.ui.geometry.Offset
 import com.posepocket.ui.theme.PocketPoserTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -63,10 +65,32 @@ class ReviewScreenTest {
         assertEquals(1,left)
     }
 
+    @Test fun focusCanBeEnabledMovedAndCommittedBeforeNext() {
+        var last:FocusWindow?=null
+        var next=0
+        compose.setContent { PocketPoserTheme {
+            ReviewScreen(ReviewLoad.Ready(info()),{_,_->next++},{},onFocus={last=it})
+        } }
+        compose.onNodeWithTag("review_playhead").assertExists()
+        compose.onNodeWithTag("review_focus_toggle").performClick()
+        assertEquals(FocusWindow(.2f,.05f,.8f,.95f),last)
+        compose.onNodeWithTag("review_focus_window").assertExists().performTouchInput {
+            swipe(center,center+Offset(24f,0f),durationMillis=350)
+        }
+        assertTrue(requireNotNull(last).left>.2f)
+        compose.onNodeWithTag("review_next").performClick()
+        assertEquals(1,next)
+    }
+
     @Test fun trimRangeRejectsEmptyOrNegativeRanges() {
         assertThrows(IllegalArgumentException::class.java) { TrimRange(-1L,10L) }
         assertThrows(IllegalArgumentException::class.java) { TrimRange(10L,10L) }
         assertEquals(500L,TrimRange(0L,500L).endUs)
+    }
+    @Test fun subsecondSelectionHasDistinctReadableTimestamps() {
+        compose.setContent{PocketPoserTheme{ReviewScreen(ReviewLoad.Ready(info(1000)),{_,_->},{},200,900)}}
+        compose.onNodeWithText("0:00.2").assertExists()
+        compose.onNodeWithText("0:00.9").assertExists()
     }
 
     @Test @Config(sdk=[35],qualifiers="w820dp-h400dp-land")

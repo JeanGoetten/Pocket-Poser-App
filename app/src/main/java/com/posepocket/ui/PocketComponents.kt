@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.posepocket.ProcessingStage
@@ -79,67 +80,73 @@ fun ActionCard(icon: ImageVector, title: String, subtitle: String, onClick: () -
     }
 }
 
-/** Stage and substep status; percentages belong only to measured operations. */
+/** Fixed-height status rows. Only directly measured substeps display a percentage. */
 @Composable
 fun StepList(current: ProcessingStage?, detail: String?, modifier: Modifier = Modifier, progress:ProcessingProgress?=null) {
-    val labels = listOf(R.string.step_prepare, R.string.step_locate, R.string.step_generate)
+    val labels=listOf(R.string.step_prepare,R.string.step_locate,R.string.step_generate)
     val currentIndex=when(current){ProcessingStage.PREPARE->0;ProcessingStage.LOCATE->1;ProcessingStage.SEND,ProcessingStage.GENERATE->2;null->-1}
-    val done = stringResource(R.string.step_done)
-    val active = stringResource(R.string.step_active)
-    val pending = stringResource(R.string.step_pending)
-    val scheme = MaterialTheme.colorScheme
+    val done=stringResource(R.string.step_done)
+    val active=stringResource(R.string.step_active)
+    val pending=stringResource(R.string.step_pending)
+    val scheme=MaterialTheme.colorScheme
     Column(modifier) {
-        labels.forEachIndexed { index, _ ->
-            val state = when {
-                currentIndex < 0 -> 2
-                index < currentIndex -> 0
-                index == currentIndex -> 1
-                else -> 2
+        labels.forEachIndexed { index, label ->
+            val state=when {
+                currentIndex<0->2
+                index<currentIndex->0
+                index==currentIndex->1
+                else->2
             }
-            val showDetail = state == 1 && (!detail.isNullOrBlank()||progress!=null)
-            Row(
-                Modifier.fillMaxWidth().semantics(mergeDescendants = true) { stateDescription = when (state) { 0 -> done; 1 -> active; else -> pending } },
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
-                        when (state) {
-                            0 -> Box(Modifier.fillMaxSize().clip(CircleShape).background(scheme.primary), contentAlignment = Alignment.Center) {
-                                Glyph(PocketIcons.Check, null, size = 18.dp, tint = scheme.onPrimary)
+            val steps=ProcessingSubstep.entries.filter { step ->
+                when(index) {
+                    0->step.stage==ProcessingStage.PREPARE
+                    1->step.stage==ProcessingStage.LOCATE
+                    else->step.stage==ProcessingStage.SEND||step.stage==ProcessingStage.GENERATE
+                }
+            }
+            Row(Modifier.fillMaxWidth().semantics(mergeDescendants=true) {
+                stateDescription=when(state){0->done;1->active;else->pending}
+            },horizontalArrangement=Arrangement.spacedBy(16.dp)) {
+                Column(horizontalAlignment=Alignment.CenterHorizontally) {
+                    Box(Modifier.size(28.dp),contentAlignment=Alignment.Center) {
+                        when(state) {
+                            0->Box(Modifier.fillMaxSize().clip(CircleShape).background(scheme.primary),contentAlignment=Alignment.Center) {
+                                Glyph(PocketIcons.Check,null,size=18.dp,tint=scheme.onPrimary)
                             }
-                            1 -> CircularProgressIndicator(Modifier.fillMaxSize(), strokeWidth = 3.dp)
-                            else -> Box(Modifier.fillMaxSize().border(2.dp, scheme.onSurface.copy(alpha = .3f), CircleShape))
+                            1->CircularProgressIndicator(Modifier.fillMaxSize(),strokeWidth=3.dp)
+                            else->Box(Modifier.fillMaxSize().border(2.dp,scheme.onSurface.copy(alpha=.3f),CircleShape))
                         }
                     }
-                    if (index < labels.lastIndex) {
-                        Box(Modifier.width(2.dp).height(if (showDetail) 44.dp else 24.dp).background(if (state == 0) scheme.primary else scheme.onSurface.copy(alpha = .2f)))
+                    if(index<labels.lastIndex) {
+                        Box(Modifier.width(2.dp).height((steps.size*32+14).dp)
+                            .background(if(state==0)scheme.primary else scheme.onSurface.copy(alpha=.2f)))
                     }
                 }
-                Column(Modifier.padding(top = 3.dp)) {
-                    Text(
-                        stringResource(labels[index]), style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = if (state == 1) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (state == 2) scheme.onSurface.copy(alpha = .6f) else scheme.onSurface,
-                    )
-                    if(showDetail&&progress!=null) {
-                        val steps=ProcessingSubstep.entries.filter { step ->
-                            when(index){0->step.stage==ProcessingStage.PREPARE;1->step.stage==ProcessingStage.LOCATE;else->step.stage==ProcessingStage.SEND||step.stage==ProcessingStage.GENERATE}
-                        }
-                        Column(Modifier.padding(top=8.dp,bottom=20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                            steps.forEach { step ->
-                                val currentStep=step==progress.step
-                                Row(Modifier.semantics(mergeDescendants=true){stateDescription=if(currentStep)active else if(step.ordinal<progress.step.ordinal)done else pending},verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                    if(step.ordinal<progress.step.ordinal)Glyph(PocketIcons.Check,null,size=14.dp,tint=scheme.primary)
-                                    else Box(Modifier.size(6.dp).background(if(currentStep)scheme.primary else scheme.outline,CircleShape))
-                                    Text(stringResource(step.label),fontWeight=if(currentStep)FontWeight.SemiBold else FontWeight.Normal,style=MaterialTheme.typography.bodyMedium,color=if(currentStep)scheme.onSurface else scheme.onSurfaceVariant)
-                                }
-                                if(currentStep)progress.percent?.let { percent ->
-                                    LinearProgressIndicator(progress={percent/100f},modifier=Modifier.fillMaxWidth().testTag("processing_percent_bar"))
-                                    Text(stringResource(R.string.progress_percent,percent),style=MaterialTheme.typography.labelMedium,modifier=Modifier.testTag("processing_percent"))
-                                }
+                Column(Modifier.weight(1f).padding(top=3.dp)) {
+                    Text(stringResource(label),style=MaterialTheme.typography.bodyLarge,
+                        fontWeight=if(state==1)FontWeight.SemiBold else FontWeight.Normal,
+                        color=if(state==2)scheme.onSurface.copy(alpha=.6f) else scheme.onSurface)
+                    Column(Modifier.padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                        steps.forEach { step ->
+                            val isCurrent=step==progress?.step
+                            val isDone=step.ordinal<(progress?.step?.ordinal?:-1)
+                            Row(Modifier.fillMaxWidth().heightIn(min=28.dp).semantics(mergeDescendants=true) {
+                                stateDescription=if(isCurrent)active else if(isDone)done else pending
+                            },verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                if(isDone)Glyph(PocketIcons.Check,null,size=14.dp,tint=scheme.primary)
+                                else Box(Modifier.size(6.dp).background(if(isCurrent)scheme.primary else scheme.outline,CircleShape))
+                                Text(stringResource(step.label),modifier=Modifier.weight(1f),
+                                    fontWeight=if(isCurrent)FontWeight.SemiBold else FontWeight.Normal,
+                                    style=MaterialTheme.typography.bodySmall,
+                                    color=if(isCurrent)scheme.onSurface else scheme.onSurfaceVariant)
+                                val percent=if(isCurrent)progress?.percent else null
+                                if(percent!=null)Text(stringResource(R.string.progress_percent,percent),
+                                    Modifier.width(48.dp).testTag("processing_percent"),
+                                    textAlign=TextAlign.End,style=MaterialTheme.typography.labelMedium)
+                                else Spacer(Modifier.width(48.dp))
                             }
                         }
-                    }else if(showDetail) Text(detail.orEmpty(),style=MaterialTheme.typography.bodySmall,color=scheme.onSurfaceVariant)
+                    }
                 }
             }
         }

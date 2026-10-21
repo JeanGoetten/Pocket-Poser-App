@@ -22,7 +22,7 @@ data class ConsentReceipt(
 ) {
     fun isValid(policy: Policy, now: Instant): Boolean =
         policyVersion == policy.version && scope == policy.scope &&
-            documentHash == policy.hash && noticeAcknowledged && remoteProcessingConsented &&
+            documentHash == policy.hash && noticeAcknowledged &&
             acceptedAt <= now && revokedAt == null
 }
 
@@ -53,11 +53,16 @@ class ConsentGate(
     }
 
     fun isGranted(): Boolean = receipt() != null
+    fun isRemoteAllowed():Boolean=receipt()?.remoteProcessingConsented==true
+
+    /** Cleanup must inspect durable revocation independently of current-policy authorization. */
+    @Synchronized
+    fun isRevoked(): Boolean = try { store.read()?.revokedAt != null } catch (_: Exception) { false }
 
     @Synchronized
     fun accept(notice: Boolean, remote: Boolean) {
-        require(notice && remote) { "As duas confirmações são obrigatórias." }
-        val receipt = ConsentReceipt(policy.version, policy.scope, policy.hash, true, true, clock.instant())
+        require(notice) { "A confirmação da política é obrigatória." }
+        val receipt = ConsentReceipt(policy.version, policy.scope, policy.hash, true, remote, clock.instant())
         storageFailed = true
         store.write(receipt)
         check(store.read() == receipt) { "Não foi possível confirmar a gravação do aceite." }
@@ -87,6 +92,11 @@ class ConsentGate(
     @Synchronized
     fun <T> withConsent(operation: () -> T): T {
         if (!isGranted()) throw ConsentRequired()
+        return operation()
+    }
+    @Synchronized
+    fun <T> withRemoteConsent(operation:()->T):T {
+        if(!isRemoteAllowed())throw ConsentRequired()
         return operation()
     }
 }

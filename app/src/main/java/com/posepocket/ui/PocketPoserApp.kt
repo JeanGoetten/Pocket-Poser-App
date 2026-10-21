@@ -30,6 +30,7 @@ fun PocketPoserApp(gate: ConsentGate, onExit: () -> Unit, onRevoke:()->Unit={}, 
     var privacy by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var licenses by rememberSaveable { mutableStateOf(false) }
+    var remoteOptIn by rememberSaveable { mutableStateOf(false) }
     val context=LocalContext.current
 
     PocketPoserTheme {
@@ -95,6 +96,20 @@ fun PocketPoserApp(gate: ConsentGate, onExit: () -> Unit, onRevoke:()->Unit={}, 
                             Text(stringResource(R.string.receipt_info,it.policyVersion,it.acceptedAt))
                         }
                         if (privacy && granted) {
+                            if (!gate.isRemoteAllowed()) {
+                                Text(stringResource(R.string.engine_remote_permission_hint))
+                                ConsentCheck(stringResource(R.string.consent_check_remote),remoteOptIn) {remoteOptIn=it}
+                                Button(enabled=remoteOptIn,onClick={
+                                    try {
+                                        gate.accept(true,true)
+                                        remoteOptIn=false
+                                        privacy=false
+                                        error=null
+                                    }catch(_:Exception) {
+                                        error=context.getString(R.string.accept_save_failed)
+                                    }
+                                }) {Text(stringResource(R.string.engine_remote_permission_enable))}
+                            }
                             Text(stringResource(R.string.revoke_notice))
                             Button(onClick = {
                                 // Block UI immediately, including when durable storage fails.
@@ -155,7 +170,7 @@ private fun ConsentDialog(
                 ConsentCheck(stringResource(R.string.consent_check_notice), notice) { notice = it }
                 ConsentCheck(stringResource(R.string.consent_check_remote), remote) { remote = it }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Button(onClick = { onAccept(notice, remote) }, enabled = notice && remote,
+                Button(onClick = { onAccept(notice, remote) }, enabled = notice,
                     modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.accept_continue)) }
                 OutlinedButton(onClick = onDecline, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.decline)) }
             }

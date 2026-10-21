@@ -62,7 +62,7 @@ class LocaleResourcesTest {
         val pt = localized("pt-BR")
         val en = localized("en-US")
         assertEquals(policy(pt, false), policy(en, false))
-        assertTrue(policy(pt, false).contains("dev-2026-10-17-v6-explicit-review-focus"))
-        assertTrue(policy(en, true).contains("dev-2026-10-17-v6-explicit-review-focus"))
+        assertTrue(policy(pt, false).contains(com.posepocket.privacy.CurrentPolicy.VERSION))
+        assertTrue(policy(en, true).contains(com.posepocket.privacy.CurrentPolicy.VERSION))
     }
 }

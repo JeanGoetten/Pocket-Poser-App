@@ -17,18 +17,20 @@ object VideoFrames {
     ) {
         require(count in 2..18000)
         require(maxBatch in 1..8)
+        // Match this device's time-based decoder, rather than assuming the Samsung's RGB_565.
+        val params=if(Build.VERSION.SDK_INT>=28) {
+            checkActive()
+            val probe=retriever.getFrameAtTime(0,MediaMetadataRetriever.OPTION_CLOSEST)
+            val config=if(probe?.config==Bitmap.Config.RGB_565)Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+            probe?.recycle()
+            MediaMetadataRetriever.BitmapParams().apply { setPreferredConfig(config) }
+        }else null
         var first=0
         while(first<count) {
             checkActive()
             val size=minOf(maxBatch,count-first)
             if(Build.VERSION.SDK_INT>=28) {
-                // Time-based retrieval on the M13 returns RGB_565, whereas indexed
-                // retrieval defaults to ARGB_8888. Preserve the detector's input
-                // quantization and avoid doubling bitmap storage unnecessarily.
-                val params=MediaMetadataRetriever.BitmapParams().apply {
-                    setPreferredConfig(Bitmap.Config.RGB_565)
-                }
-                val batch=retriever.getFramesAtIndex(first,size,params)
+                val batch=retriever.getFramesAtIndex(first,size,requireNotNull(params))
                 try {
                     require(batch.size==size) { "Decodificação incompleta do vídeo normalizado." }
                     batch.forEachIndexed { offset,bitmap ->

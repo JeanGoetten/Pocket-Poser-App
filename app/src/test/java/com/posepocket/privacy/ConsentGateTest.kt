@@ -29,16 +29,21 @@ class ConsentGateTest {
         assertFalse(executed)
     }
 
-    @Test fun bothAffirmationsAreRequiredAndPartialAcceptanceIsNeverSaved() {
+    @Test fun offlineAcknowledgementDoesNotGrantRemoteTransfer() {
         val store = MemoryStore()
         val gate = ConsentGate(policy, store, clock)
-        listOf(false to false, true to false, false to true).forEach { (notice, remote) ->
-            assertThrows(IllegalArgumentException::class.java) { gate.accept(notice, remote) }
+        listOf(false to false,false to true).forEach { (notice,remote) ->
+            assertThrows(IllegalArgumentException::class.java) { gate.accept(notice,remote) }
             assertNull(store.value)
         }
-        gate.accept(true, true)
-        assertEquals(now, gate.receipt()?.acceptedAt)
-        assertEquals("executed", gate.withConsent { "executed" })
+        gate.accept(true,false)
+        assertTrue(gate.isGranted())
+        assertFalse(gate.isRemoteAllowed())
+        assertEquals("local",gate.withConsent { "local" })
+        assertThrows(ConsentRequired::class.java) { gate.withRemoteConsent { fail("No remote!") } }
+        gate.accept(true,true)
+        assertTrue(gate.isRemoteAllowed())
+        assertEquals("remote",gate.withRemoteConsent { "remote" })
     }
 
     @Test fun validReceiptSurvivesGateRecreation() {
@@ -64,6 +69,7 @@ class ConsentGateTest {
         assertEquals(now, store.value?.revokedAt)
         assertThrows(ConsentRequired::class.java) { gate.withConsent { fail("Must not execute") } }
         assertFalse(ConsentGate(policy, store, clock).isGranted())
+        assertTrue(ConsentGate(policy.copy(version="new-policy"), store, clock).isRevoked())
         gate.accept(true, true)
         assertTrue(gate.isGranted())
     }
@@ -92,7 +98,7 @@ class ConsentGateTest {
         gate.accept(true, true)
         val valid = store.value!!
         listOf(valid.copy(acceptedAt = now.plusSeconds(1)), valid.copy(noticeAcknowledged = false),
-            valid.copy(remoteProcessingConsented = false)).forEach {
+            valid.copy(documentHash = "corrupted")).forEach {
             store.value = it
             assertFalse(gate.isGranted())
         }

@@ -16,11 +16,13 @@ public class SyntheticProvider extends ContentProvider {
     @Override public boolean onCreate() { return true; }
     @Override public String getType(Uri uri) { return "video/mp4"; }
     @Override public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
-        if (!"r".equals(mode) || !"/video".equals(uri.getPath()) || getContext() == null)
+        String asset = "/video".equals(uri.getPath()) ? "synthetic-test.mp4"
+            : "/long-video".equals(uri.getPath()) ? "synthetic-trim-test.mp4" : null;
+        if (!"r".equals(mode) || asset == null || getContext() == null)
             throw new FileNotFoundException("Test URI unavailable");
-        File file = new File(getContext().getCacheDir(), "synthetic-test.mp4");
+        File file = new File(getContext().getCacheDir(), asset);
         if (!file.exists()) {
-            try (InputStream input = getContext().getAssets().open("synthetic-test.mp4");
+            try (InputStream input = getContext().getAssets().open(asset);
                  FileOutputStream output = new FileOutputStream(file)) {
                 byte[] buffer = new byte[8192];
                 int count;

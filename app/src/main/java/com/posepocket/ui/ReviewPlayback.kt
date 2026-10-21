@@ -29,6 +29,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import com.posepocket.R
 
 /** The media source enforces both boundaries, including decoding from a preceding keyframe. */
@@ -42,7 +44,7 @@ internal fun reviewMediaItem(uri:Uri,start:Long,end:Long):MediaItem {
 /** One player per URI; recomposition never releases an active decoder. No audio or auto-play. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-internal fun VideoReview(info:ReviewInfo,start:Long,end:Long,modifier:Modifier,playerFactory:(Context)->ExoPlayer={ExoPlayer.Builder(it).build()}) {
+internal fun VideoReview(info:ReviewInfo,start:Long,end:Long,modifier:Modifier,onPlaybackProgress:(Float)->Unit={},playerFactory:(Context)->ExoPlayer={ExoPlayer.Builder(it).build()}) {
     val context=LocalContext.current
     val owner=LocalLifecycleOwner.current
     val player=remember(context,info.uri) {
@@ -55,6 +57,7 @@ internal fun VideoReview(info:ReviewInfo,start:Long,end:Long,modifier:Modifier,p
     var playing by remember(player){mutableStateOf(false)}
     var rendered by remember(player){mutableStateOf(false)}
     var failed by remember(player){mutableStateOf(false)}
+    val reportProgress by rememberUpdatedState(onPlaybackProgress)
     DisposableEffect(player) {
         val listener=object:Player.Listener {
             override fun onPlaybackStateChanged(state:Int) {
@@ -76,7 +79,23 @@ internal fun VideoReview(info:ReviewInfo,start:Long,end:Long,modifier:Modifier,p
     LaunchedEffect(player,start,end) {
         player?.let {
             it.pause();ready=false;rendered=false;failed=false;playing=false
+            reportProgress(0f)
             it.setMediaItem(reviewMediaItem(requireNotNull(info.uri),start,end));it.prepare()
+        }
+    }
+    // Progress is based on the clipped player window, not elapsed wall time.
+    LaunchedEffect(player,start,end,ready,playing) {
+        if(player!=null&&ready) {
+            do {
+                val duration=player.duration
+                val position=player.currentPosition
+                val fraction=if(duration>0L&&duration!=C.TIME_UNSET)
+                    (position.toFloat()/duration.toFloat()).coerceIn(0f,1f)
+                    else 0f
+                reportProgress(fraction)
+                if(!playing)break
+                delay(80L)
+            }while(isActive)
         }
     }
     val playbackState=stringResource(if(playing)R.string.pause else R.string.play)

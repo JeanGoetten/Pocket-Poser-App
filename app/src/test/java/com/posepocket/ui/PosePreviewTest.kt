@@ -28,6 +28,51 @@ class PosePreviewTest {
     @get:Rule val compose=createComposeRule()
     @get:Rule val folder=TemporaryFolder()
 
+    @Test fun frameFiltersAreAccessibleFromOverflowMenu() {
+        val source=syntheticDemo(folder.newFile("filters-menu.jsonl"))
+        val selected=mutableStateOf(FrameFilters())
+        compose.setContent { MaterialTheme {
+            PosePreview(source.copy(frameFilters=selected.value),false,{},{},{},{},
+                onFiltersChange={selected.value=it})
+        } }
+        compose.onNodeWithTag("preview_more").performClick()
+        compose.onAllNodesWithText("Ocultar quadros vazios").onLast().performSemanticsAction(SemanticsActions.OnClick)
+        assertTrue(selected.value.hideEmpty)
+        compose.onNodeWithTag("preview_more").performClick()
+        compose.onAllNodesWithText("Remover quadros duplicados").onLast().performSemanticsAction(SemanticsActions.OnClick)
+        assertTrue(selected.value.removeDuplicates)
+    }
+
+    @Test fun filterChangesPreserveCurrentSourceFrameOrUseNearestAvailableFrame() {
+        val demo=syntheticDemo(folder.newFile("filter-cursor.jsonl"))
+        val source=demo.copy(frames=demo.frames.map{if(it.id==1)it.copy(joints=null)else it})
+        val filters=mutableStateOf(FrameFilters())
+        compose.setContent{MaterialTheme{
+            PosePreview(source.copy(frameFilters=filters.value),false,{},{},{},{},
+                onFiltersChange={filters.value=it})
+        }}
+        compose.onNodeWithTag("preview_timeline")
+            .performSemanticsAction(SemanticsActions.SetProgress){assertTrue(it(5f))}
+        compose.onNodeWithText("6 / 120").assertExists()
+        compose.runOnIdle{filters.value=FrameFilters(hideEmpty=true)}
+        compose.onNodeWithText("5 / 119 (origem 6)").assertExists()
+        compose.runOnIdle{filters.value=FrameFilters()}
+        compose.onNodeWithText("6 / 120").assertExists()
+        compose.onNodeWithTag("preview_timeline")
+            .performSemanticsAction(SemanticsActions.SetProgress){assertTrue(it(1f))}
+        compose.runOnIdle{filters.value=FrameFilters(hideEmpty=true)}
+        // Source frame 2 was removed; source frame 3 is closer than frame 1.
+        compose.onNodeWithText("2 / 119 (origem 3)").assertExists()
+    }
+
+    @Test fun sourceFrameFallbackPrefersNearestLaterFrameOnTie() {
+        assertEquals(0,nearestSelectedIndex(emptyList(),4))
+        assertEquals(0,nearestSelectedIndex(listOf(2,5,8),0))
+        assertEquals(2,nearestSelectedIndex(listOf(2,5,8),9))
+        assertEquals(1,nearestSelectedIndex(listOf(0,2,4,8),2))
+        assertEquals(2,nearestSelectedIndex(listOf(0,2,4,8),3))
+    }
+
     @Test fun smoothingIsExplicitAndDoesNotChangeOriginalOrInflateProviderCount() {
         val demo=syntheticDemo(folder.newFile("gap.jsonl"))
         val first=org.json.JSONObject(demo.raw.readLines().first()).getJSONArray("detections").toString()
@@ -48,6 +93,20 @@ class PosePreviewTest {
         compose.onNodeWithText("Quadro interpolado").assertExists()
         compose.onNodeWithText("Pose detectada neste quadro.").assertDoesNotExist()
         assertEquals(hash,fileHash(clip.raw))
+    }
+
+    @Test fun filteringEveryFrameDisplaysEmptyStateAndDisablesPlaybackAndExport() {
+        val demo=syntheticDemo(folder.newFile("filtered-empty.jsonl"))
+        val empty=demo.copy(frames=demo.frames.map{it.copy(joints=null)},
+            frameFilters=FrameFilters(hideEmpty=true))
+        var exported=false
+        compose.setContent{MaterialTheme{PosePreview(empty,false,{},{},{},{exported=true})}}
+        compose.onNodeWithText("Nenhum quadro após os filtros").assertExists()
+        compose.onNodeWithTag("preview_timeline").assertIsNotEnabled()
+        compose.onNodeWithTag("preview_play").assertIsNotEnabled()
+        compose.onNodeWithTag("preview_export").assertIsNotEnabled()
+        compose.onNodeWithTag("preview_save").assertIsEnabled()
+        assertFalse(exported)
     }
 
     @Test fun playbackAndSaveStayVisibleAcrossDetectionGaps() {

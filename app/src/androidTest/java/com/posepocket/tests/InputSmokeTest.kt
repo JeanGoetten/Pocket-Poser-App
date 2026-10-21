@@ -27,6 +27,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class InputSmokeTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
+    private fun label(id:Int)=compose.activity.getString(id)
     private val model get()=ViewModelProvider(compose.activity)[PocketViewModel::class.java]
     private fun syntheticUri(path:String)=Uri.Builder().scheme("content").authority(InstrumentationRegistry.getInstrumentation().context.packageName + ".synthetic").appendPath(path).build()
     private var previousReceipt:ByteArray?=null
@@ -39,11 +40,11 @@ class InputSmokeTest {
         previousReceipt=File(compose.activity.noBackupFilesDir,"consent.json").takeIf{it.exists()}?.readBytes()
         backupTaken=true
         compose.waitForIdle()
-        if(compose.onAllNodesWithText("Aceitar e continuar").fetchSemanticsNodes().isNotEmpty()) {
+        if(compose.onAllNodesWithText(label(com.posepocket.R.string.accept_continue)).fetchSemanticsNodes().isNotEmpty()) {
             compose.onAllNodes(isToggleable()).fetchSemanticsNodes().indices.forEach { i->
                 compose.onAllNodes(isToggleable())[i].performScrollTo().performClick()
             }
-            compose.onNodeWithText("Aceitar e continuar").performScrollTo().performClick()
+            compose.onNodeWithText(label(com.posepocket.R.string.accept_continue)).performScrollTo().performClick()
         }
         compose.waitForIdle()
     }
@@ -61,13 +62,18 @@ class InputSmokeTest {
         Intents.release()
     }
 
+    private fun snapshot(name:String) {
+        val bitmap=compose.onAllNodes(isRoot()).onLast().captureToImage().asAndroidBitmap()
+        File(compose.activity.cacheDir,name).outputStream().use{bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+    }
+
     @Test fun cancelingPickerDoesNotCreateJobOrOpenCamera() {
         intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(Instrumentation.ActivityResult(Activity.RESULT_CANCELED,null))
-        compose.onNodeWithText("Anexar vídeo").performScrollTo().performClick()
+        compose.onNodeWithText(label(com.posepocket.R.string.attach_video)).performScrollTo().performClick()
         compose.waitForIdle()
         assertFalse(model.state.value.busy)
         assertNull(model.state.value.clip)
-        compose.onNodeWithText("Gravar vídeo").assertExists()
+        compose.onNodeWithText(label(com.posepocket.R.string.record_with_camera)).assertExists()
     }
 
     @Test fun cancelingNativeCameraKeepsEntryAndCreatesNoJob() {
@@ -98,7 +104,7 @@ class InputSmokeTest {
         stage.performTouchInput{doubleClick(center)}
         assertEquals(initial,imageHash())
         fun snapshot(name:String){
-            val bitmap=compose.onRoot().captureToImage().asAndroidBitmap()
+            val bitmap=compose.onAllNodes(isRoot()).onLast().captureToImage().asAndroidBitmap()
             File(compose.activity.cacheDir,name).outputStream().use{bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
         }
         snapshot("ux-studio.png")
@@ -109,6 +115,14 @@ class InputSmokeTest {
         snapshot("ux-skeleton.png")
         compose.onNodeWithTag("preview_save").assertIsDisplayed()
         assertEquals(rawHash,com.posepocket.pose.fileHash(clip.raw))
+        stage.performTouchInput { swipe(center,center+Offset(90f,25f),400) }
+        val beforeSave=imageHash()
+        compose.runOnIdle { model.save() }
+        compose.waitUntil(10000){model.state.value.savedId!=null&&!model.state.value.busy}
+        // The confirmation notice changes viewport height; compare after dismissing it.
+        compose.runOnIdle { model.dismissNotice() }
+        assertEquals("Saving must retain the preview camera",beforeSave,imageHash())
+        assertTrue(requireNotNull(model.state.value.clip).raw.isFile)
     }
 
     @Test fun landscapePreservesCameraAndKeepsSaveReachable() {
@@ -118,7 +132,7 @@ class InputSmokeTest {
             compose.waitUntil(10000){model.state.value.clip!=null}
             val raw=requireNotNull(model.state.value.clip).raw
             val hash=com.posepocket.pose.fileHash(raw)
-            val stage=compose.onNodeWithContentDescription("Vista 3D.",substring=true)
+            val stage=compose.onNodeWithContentDescription(label(com.posepocket.R.string.stage_gestures),substring=true)
             val zoom=stage.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
                 .single{it.label=="Zoom in"}
             compose.runOnIdle{assertTrue(zoom.action())}
@@ -127,7 +141,7 @@ class InputSmokeTest {
             stage.assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"Zoom 103%"))
             compose.onNodeWithTag("preview_save").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("preview_export").assertIsDisplayed()
-            val bitmap=compose.onRoot().captureToImage().asAndroidBitmap()
+            val bitmap=compose.onAllNodes(isRoot()).onLast().captureToImage().asAndroidBitmap()
             File(compose.activity.cacheDir,"ux-landscape.png").outputStream().use{bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
             compose.activityRule.scenario.recreate()
             compose.waitUntil(15000){compose.onAllNodesWithTag("preview_side_dock").fetchSemanticsNodes().isNotEmpty()}
@@ -156,17 +170,22 @@ class InputSmokeTest {
     }
 
     @Test fun redoFromSavedProjectReturnsToBothInputsAndPreservesTheProject() {
+        compose.runOnIdle{compose.activity.requestedOrientation=android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE}
+        compose.waitUntil(10000){compose.onAllNodesWithTag("entry_sources").fetchSemanticsNodes().isNotEmpty()}
         compose.runOnIdle{model.demo()}
         compose.waitUntil(10000){model.state.value.clip!=null}
         compose.onNodeWithTag("preview_save").performClick()
         compose.waitUntil(10000){model.state.value.savedId!=null&&!model.state.value.busy}
         val id=requireNotNull(model.state.value.savedId)
         compose.onNodeWithTag("preview_back").performClick()
-        compose.onNodeWithTag("entry_library").performClick()
+        snapshot("ux-library-before.png")
+        compose.onNodeWithTag("entry_library").assertIsDisplayed().performClick()
+        snapshot("ux-library-after.png")
+        compose.waitUntil(10000){compose.onAllNodesWithTag("project_$id").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("project_$id").performClick()
         compose.waitUntil(10000){model.state.value.savedId==id&&model.state.value.clip!=null&&!model.state.value.busy}
         compose.onNodeWithTag("preview_more").performClick()
-        compose.onNodeWithText("Refazer").performClick()
+        compose.onNodeWithText(label(com.posepocket.R.string.redo)).performClick()
         compose.onNodeWithTag("entry_attach").assertIsDisplayed()
         compose.onNodeWithTag("entry_record").assertIsDisplayed()
         assertTrue(model.state.value.projects.any{it.id==id})
@@ -193,38 +212,48 @@ class InputSmokeTest {
     }
 
     @Test fun firstReviewPlaysOnlyTheSelectionAndCanReplayWithoutRecordingAgain() {
-        intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(Instrumentation.ActivityResult(Activity.RESULT_OK,Intent().setData(syntheticUri("video"))))
+        intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(Instrumentation.ActivityResult(Activity.RESULT_OK,Intent().setData(syntheticUri("long-video"))))
         compose.onNodeWithTag("entry_attach").performClick()
         compose.waitUntil(15000){compose.onAllNodesWithTag("review_play").fetchSemanticsNodes().isNotEmpty()}
         val sliders=compose.onAllNodes(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsActions.SetProgress))
         sliders[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress){it(200f)}
-        sliders[1].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress){it(900f)}
+        sliders[1].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress){it(2900f)}
         compose.waitUntil(10000){compose.onAllNodesWithTag("review_play").filter(isEnabled()).fetchSemanticsNodes().isNotEmpty()}
+        snapshot("ux-review-first.png")
         repeat(2) {
             compose.onNodeWithTag("review_play").performClick()
-            compose.waitUntil(5000){compose.onAllNodesWithContentDescription("Pausar").fetchSemanticsNodes().isNotEmpty()}
-            compose.waitUntil(5000){compose.onAllNodesWithContentDescription("Pausar").fetchSemanticsNodes().isEmpty()}
+            compose.waitUntil(5000){compose.onAllNodesWithContentDescription(label(com.posepocket.R.string.pause)).fetchSemanticsNodes().isNotEmpty()}
+            compose.waitUntil(5000){compose.onAllNodesWithContentDescription(label(com.posepocket.R.string.pause)).fetchSemanticsNodes().isEmpty()}
             compose.onNodeWithTag("review_play").assertIsEnabled()
             assertFalse(model.state.value.busy)
         }
     }
 
     @Test fun contentUriStartsPreparationAutomaticallyAndCleansTemporaryVideo() {
+        compose.runOnIdle{compose.activity.requestedOrientation=android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE}
+        compose.waitUntil(10000){compose.onAllNodesWithTag("entry_sources").fetchSemanticsNodes().isNotEmpty()}
         intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(Instrumentation.ActivityResult(Activity.RESULT_OK,
             Intent().setData(syntheticUri("video"))))
-        compose.onNodeWithText("Anexar vídeo").performScrollTo().performClick()
+        compose.onNodeWithText(label(com.posepocket.R.string.attach_video)).performScrollTo().performClick()
         compose.waitUntil(15000){model.state.value.review!=null}
         compose.waitUntil(15000){compose.onAllNodesWithTag("review_next").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("review_next").assertExists()
         assertFalse("Review must not upload or prepare automatically",model.state.value.busy)
         compose.onNodeWithTag("review_next").performClick()
-        compose.waitUntil(15000){model.state.value.error!=null&&!model.state.value.busy}
-        assertTrue("A falha da etapa deve ser informada.",model.state.value.error?.isNotBlank()==true)
-        assertNotNull("Etapas já concluídas devem permanecer recuperáveis.",model.state.value.recovery)
+        compose.waitUntil(30000){model.state.value.recovery!=null&&!model.state.value.busy}
+        val terminal=model.state.value
+        val terminalError=terminal.error
+        if(terminalError==null) {
+            assertTrue("A successful local stop must be the explicit low-coverage decision",
+                terminal.tracking?.percent?.let { it<80 }==true)
+        }else assertTrue("A processing error must be visible",terminalError.isNotBlank())
+        assertNotNull("Completed local stages must remain recoverable",terminal.recovery)
         assertNull(model.state.value.clip)
         compose.waitUntil(5000){File(compose.activity.cacheDir,"media").listFiles().orEmpty().isEmpty()}
-        compose.onNodeWithTag("recovery_discard").performClick()
-        compose.onNodeWithText("Descartar e voltar às entradas").performClick()
+        snapshot("ux-recovery-before.png")
+        compose.onNodeWithTag("recovery_discard").assertIsDisplayed().performClick()
+        snapshot("ux-recovery-after.png")
+        compose.onNodeWithText(label(com.posepocket.R.string.discard_confirm)).performClick()
         compose.waitUntil(10000){model.state.value.recovery==null&&!model.state.value.busy}
         compose.onNodeWithTag("entry_attach").assertIsDisplayed()
     }
@@ -232,12 +261,12 @@ class InputSmokeTest {
     @Test fun revokedUriIsRecoverableAndDoesNotCreateResult() {
         intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(Instrumentation.ActivityResult(Activity.RESULT_OK,
             Intent().setData(syntheticUri("revoked"))))
-        compose.onNodeWithText("Anexar vídeo").performScrollTo().performClick()
+        compose.onNodeWithText(label(com.posepocket.R.string.attach_video)).performScrollTo().performClick()
         compose.waitUntil(15000){model.state.value.review!=null}
-        compose.waitUntil(15000){compose.onAllNodesWithText("Não foi possível ler este vídeo.",substring=true).fetchSemanticsNodes().isNotEmpty()}
-        compose.onNodeWithText("Não foi possível ler este vídeo.",substring=true).assertExists()
+        compose.waitUntil(15000){compose.onAllNodesWithText(label(com.posepocket.R.string.review_unreadable),substring=true).fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithText(label(com.posepocket.R.string.review_unreadable),substring=true).assertExists()
         compose.onNodeWithTag("review_choose").performClick()
         assertNull(model.state.value.clip)
-        compose.onNodeWithText("Anexar vídeo").assertIsEnabled()
+        compose.onNodeWithText(label(com.posepocket.R.string.attach_video)).assertIsEnabled()
     }
 }

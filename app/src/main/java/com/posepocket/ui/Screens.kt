@@ -20,6 +20,7 @@ import com.posepocket.ProcessingStage
 import com.posepocket.ProcessingProgress
 import com.posepocket.R
 import com.posepocket.pose.SavedProject
+import com.posepocket.pose.ProcessingEngine
 import com.posepocket.ui.theme.PocketTheme
 
 /** Entry: attaching a video is the one primary action; recording with the camera app is secondary (D-15). */
@@ -35,34 +36,50 @@ fun EntryScreen(
     onDemo: () -> Unit,
     onLibrary: () -> Unit,
     modifier: Modifier = Modifier,
+    engine:ProcessingEngine=ProcessingEngine.NVIDIA,
+    onEngineChange:(ProcessingEngine)->Unit={},
 ) {
     val scheme = MaterialTheme.colorScheme
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Spacer(Modifier.height(36.dp))
-        ActionCard(
-            PocketIcons.VideoLibrary, stringResource(R.string.attach_video), stringResource(R.string.entry_attach_subtitle),
-            onAttach, Modifier.fillMaxWidth().testTag("entry_attach"), primary = true, enabled = enabled,
-        )
-        ActionCard(
-            PocketIcons.Camera, stringResource(R.string.record_with_camera), stringResource(R.string.entry_record_subtitle),
-            onRecord, Modifier.fillMaxWidth().testTag("entry_record"), enabled = enabled && cameraAvailable,
-        )
-        if (!cameraAvailable) {
-            Text(stringResource(R.string.no_camera_found), style = MaterialTheme.typography.bodySmall, color = scheme.onSurface.copy(alpha = .7f))
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val wide=maxWidth>=600.dp&&maxWidth>maxHeight
+        val attach: @Composable (Modifier)->Unit = { tile ->
+            ActionCard(PocketIcons.VideoLibrary,stringResource(R.string.attach_video),stringResource(R.string.entry_attach_subtitle),onAttach,tile.testTag("entry_attach"),primary=true,enabled=enabled)
         }
-        // Never color alone: the chip always carries text, and the missing state is the tappable one.
-        StatusChip(
-            stringResource(if (keyConfigured) R.string.key_chip_ready else R.string.key_chip_missing),
-            if (keyConfigured) scheme.primary else PocketTheme.extras.warning,
-            Modifier.align(Alignment.CenterHorizontally).testTag("entry_key"), PocketIcons.Key, onClick = onKey,
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onDemo, enabled = enabled, modifier = Modifier.testTag("entry_demo")) { Text(stringResource(R.string.open_demo)) }
+        val record: @Composable (Modifier)->Unit = { tile ->
+            ActionCard(PocketIcons.Camera,stringResource(R.string.record_with_camera),stringResource(R.string.entry_record_subtitle),onRecord,tile.testTag("entry_record"),enabled=enabled&&cameraAvailable)
         }
-        TextButton(onClick = onLibrary, modifier = Modifier.align(Alignment.CenterHorizontally).testTag("entry_library")) {
-            Glyph(PocketIcons.Folder, null, size = 18.dp)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.library_open, projectCount))
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(if(wide)8.dp else 16.dp)) {
+            Spacer(Modifier.height(if(wide)4.dp else 24.dp))
+            if(wide)Row(Modifier.fillMaxWidth().testTag("entry_sources"),horizontalArrangement=Arrangement.spacedBy(16.dp)) {
+                attach(Modifier.weight(1f));record(Modifier.weight(1f))
+            }else {attach(Modifier.fillMaxWidth());record(Modifier.fillMaxWidth())}
+            if(!cameraAvailable)Text(stringResource(R.string.no_camera_found),style=MaterialTheme.typography.bodySmall,color=scheme.onSurfaceVariant)
+            if(engine==ProcessingEngine.NVIDIA) StatusChip(stringResource(if(keyConfigured)R.string.key_chip_ready else R.string.key_chip_missing),
+                if(keyConfigured)scheme.primary else PocketTheme.extras.warning,
+                Modifier.align(Alignment.CenterHorizontally).testTag("entry_key"),PocketIcons.Key,onClick=onKey)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
+                TextButton(onDemo,Modifier.weight(1f).testTag("entry_demo"),enabled=enabled){Text(stringResource(R.string.open_demo))}
+                TextButton(onLibrary,Modifier.weight(1f).testTag("entry_library")) {
+                    Glyph(PocketIcons.Folder,null,size=18.dp);Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.library_open,projectCount))
+                }
+            }
+            Text(stringResource(R.string.engine_picker_title),style=MaterialTheme.typography.titleMedium)
+            Column(Modifier.fillMaxWidth().testTag("entry_engine_picker"),
+                verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                ProcessingEngine.values().forEach { option ->
+                    val title=stringResource(when(option) {
+                        ProcessingEngine.NVIDIA->R.string.engine_nvidia
+                        ProcessingEngine.ML_KIT->R.string.engine_mlkit
+                        ProcessingEngine.MEDIAPIPE->R.string.engine_mediapipe
+                    })
+                    FilterChip(selected=engine==option,onClick={onEngineChange(option)},
+                        label={Text(title)},modifier=Modifier.fillMaxWidth()
+                            .testTag("engine_"+option.name.lowercase()),enabled=enabled)
+                }
+            }
+            Text(stringResource(if(engine.offline)R.string.engine_local_warning else R.string.engine_remote_warning),
+                style=MaterialTheme.typography.bodySmall,color=scheme.onSurfaceVariant)
         }
     }
 }
@@ -76,6 +93,7 @@ fun ProcessingScreen(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
     progress:ProcessingProgress?=null,
+    offline:Boolean=false,
 ) {
     BackHandler(enabled=canCancel){onCancel()}
     val scheme = MaterialTheme.colorScheme
@@ -83,8 +101,12 @@ fun ProcessingScreen(
         val privacy=LocalOpenPrivacy.current
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){IconAction(PocketIcons.Lock,stringResource(R.string.privacy_and_auth),privacy)}
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=16.dp),verticalArrangement=Arrangement.Center) {
-            if(stage!=null)StepList(stage,null,Modifier.testTag("processing_steps"),progress)
-            if(stage==null){CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally));if(phase.isNotBlank())Text(phase,style=MaterialTheme.typography.bodyMedium,color=scheme.onSurface.copy(alpha=.8f))}
+            if(stage!=null&&!offline)StepList(stage,null,Modifier.testTag("processing_steps"),progress)
+            if(stage==null||offline){
+                CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+                if(phase.isNotBlank())Text(phase,style=MaterialTheme.typography.bodyMedium,
+                    color=scheme.onSurface.copy(alpha=.8f))
+            }
         }
         if (canCancel) {
             OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("processing_cancel")) {

@@ -1,28 +1,26 @@
-# Architecture
+# Architecture — Pocket Poser 0.7.0 source preview
 
-Pocket Poser is an Android application built with Kotlin and Jetpack Compose.
+## Video and pose flow
 
-## Processing
+1. User imports one video or records through the Android system camera.
+2. Review selects a trim interval and an optional focus rectangle. Preparation removes audio and normalizes a short single-person video locally.
+3. User selects exactly one processing engine:
+   - NVIDIA Nova-77: local person tracking and TLS/gRPC upload of prepared video, bounding boxes and metadata, subject to a separate explicit remote-processing opt-in and user-supplied API key.
+   - ML Kit: local on-device 33-point landmark inference.
+   - MediaPipe Lite: local on-device 33-point landmark inference using a developer-provided, locally installed model asset.
+4. Preview preserves source topology: 77 joint connections for NVIDIA or 33 native landmarks for the two offline engines. Invalid landmarks remain absent; low-visibility estimated landmarks are drawn as such. There is no 33-to-77 synthetic rig conversion.
+5. Projects retain JSONL source and provenance; exports are motion data, not skinned-character animation.
 
-1. Android's document picker or system camera returns a video URI.
-2. The user previews the video, selects a time segment and may set a normalized focus rectangle.
-3. After confirmation, the app imports the selected media into private storage and removes audio.
-4. Local processing normalizes the selected region to H.264 SDR at 30 frames/s and performs experimental single-person tracking with OpenCV.
-5. The app sends the prepared video, tracking boxes and metadata directly to NVIDIA Body Pose using TLS/gRPC and the user's API key.
-6. Nova-77 joint data is rendered in the viewer and can be saved as a local project or exported as JSONL.
+## Local data and model setup
 
-The Python gateway in the private development environment is not required by the Android production path and is not included in this distribution.
+Android Keystore stores NVIDIA credentials. Local input, preparation files, checkpoints and pose projects use private app storage. The app permits source-frame filters without replacing original records. Offline output records 33 landmark positions and per-index confidence for informed interpretation.
 
-## Storage
+The public source snapshot does NOT redistribute the upstream MediaPipe Lite model binary. See [Model setup](MODELS.md). It enforces a fixed SHA-256 at build time. This protects reproducibility, not redistribution permissions.
 
-Credentials are kept locally using Android Keystore. Work in progress may preserve prepared files in the app's private, non-backed-up area for explicit recovery. Saved projects include an immutable source JSONL and optional non-destructive edits and frame-filter settings.
+## SDK diagnostics
 
-Preview smoothing does not create NVIDIA observations. The Hide Empty Frames and Remove Duplicate Frames settings change playback and filtered JSONL export without rewriting the source capture. Filtered exports use consecutive `frame_id` values and retain `source_frame_id` for traceability.
+Input video processing and pose inference run on-device for the two offline modes; this does not establish that third-party SDKs never communicate technical metrics or configuration. See [Privacy](PRIVACY.md) and official Google notices. Remote NVIDIA transfer is a separate user-controlled operation.
 
-## Dependencies and rights
+## Limits
 
-The Nova-77 skeleton hierarchy and protocol definitions include NVIDIA-derived material under its upstream MIT notice. Other dependencies retain their upstream licenses. See [Third-party notices](../THIRD_PARTY_NOTICES.md).
-
-## Limitations
-
-Only one person per clip is supported. Local detection may be incomplete, particularly in poor lighting or with partial visibility. The service's terms, quotas and retention policies are separate from the application's implementation.
+Only one person per video; incomplete pose detection, occlusion errors and camera/depth ambiguity remain possible. No calibrated skeleton retargeting or Unity/Godot animation export yet. Production signing and new public APK distribution remain gated by licensing and privacy review.

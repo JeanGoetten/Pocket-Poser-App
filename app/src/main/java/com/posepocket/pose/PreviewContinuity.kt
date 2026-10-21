@@ -2,7 +2,9 @@ package com.posepocket.pose
 
 import kotlin.math.*
 
-data class PreviewPose(val joints:List<Vec3>,val interpolated:Boolean)
+data class PreviewPose(val joints:List<Vec3>,val interpolated:Boolean,
+    val visibility:List<Boolean>?=null,
+    val confidence:List<Float?>?=null)
 
 /** Derived display-only data. Never written into a clip, project or export.
  * Bounded interpolation preserves bone lengths and never extrapolates edges. */
@@ -11,11 +13,20 @@ class PreviewContinuity(frames:List<PoseFrame>,fps:Double) {
     private val filled=mutableMapOf<Int,List<Vec3>>()
     val count get()=filled.size
     fun positions():Sequence<Vec3> = sequence {
-        originals.values.forEach { frame -> frame.joints?.let{yieldAll(it)} }
+        originals.values.forEach { frame ->
+            frame.joints?.forEachIndexed { index,joint ->
+                // A low-visibility MediaPipe estimate can be very far from the
+                // body; draw it faint but never let it resize the whole stage.
+                if(frame.visibility?.get(index)!=false &&
+                    !(frame.confidence?.getOrNull(index)?.let { it<.30f } ?: false))
+                    yield(joint)
+            }
+        }
         filled.values.forEach{yieldAll(it)}
     }
     init {
-        val known=frames.filter{it.joints!=null}.sortedBy{it.id}
+        // Local Pose33 contains missing landmarks; never invent them using Nova-77.
+        val known=frames.filter{it.joints?.size==77}.sortedBy{it.id}
         val maxGap=min(6,floor(fps*.2).toInt())
         known.zipWithNext().forEach { (a,b) ->
             val missing=b.id-a.id-1
@@ -29,7 +40,7 @@ class PreviewContinuity(frames:List<PoseFrame>,fps:Double) {
         }
     }
     fun at(frame:Int,smooth:Boolean):PreviewPose? {
-        originals[frame]?.joints?.let{return PreviewPose(it,false)}
+        originals[frame]?.joints?.let{return PreviewPose(it,false,originals[frame]?.visibility,originals[frame]?.confidence)}
         return if(smooth)filled[frame]?.let{PreviewPose(it,true)}else null
     }
     private fun interpolate(a:List<Vec3>,b:List<Vec3>,t:Float):List<Vec3>? {

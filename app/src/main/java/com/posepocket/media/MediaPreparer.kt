@@ -33,11 +33,28 @@ internal object VideoSizeLimits {
         require(bytes in 1..MAX_NVIDIA_BYTES) { "O vídeo convertido excede 50 MB para a NVIDIA." }
     }
 }
-data class PreparedVideo(val file:File,val hash:String,val source:String,val originalHash:String?=null,val focus:FocusWindow?=null)
+data class PreparedVideo(val file:File,val hash:String,val source:String,val originalHash:String?=null,val focus:FocusWindow?=null,val trim:TrimRange?=null)
 
-/** Part of the source to keep, in microseconds. The cut is a stream copy, so it starts at the nearest earlier key frame. */
+/** Half-open interval in microseconds. Preparation retains decode preroll; normalization excludes it. */
 data class TrimRange(val startUs:Long,val endUs:Long) {
     init { require(startUs>=0L&&endUs>startUs) { "Invalid trim range." } }
+}
+
+/**
+ * Review duration comes from MediaMetadataRetriever (milliseconds), while the
+ * processing track duration comes from MediaExtractor (microseconds). They may
+ * differ slightly because of container rounding, edit lists and time bases.
+ * Accept only a small end discrepancy (up to 50 ms); NEVER extend a selection
+ * beyond the actual track duration or change its selected start.
+ */
+internal fun validatedTrimAgainstTrackDuration(range:TrimRange, trackDurationUs:Long):TrimRange {
+    require(trackDurationUs>0L)
+    val endSlackUs=50_000L
+    require(range.startUs<trackDurationUs &&
+        range.endUs<=trackDurationUs+endSlackUs) { "Intervalo de vídeo inválido." }
+    val end=minOf(range.endUs,trackDurationUs)
+    require(end>range.startUs) { "Intervalo de vídeo inválido." }
+    return TrimRange(range.startUs,end)
 }
 
 class MediaPreparer(private val context:Context,private val gate:ConsentGate) {
@@ -48,6 +65,7 @@ class MediaPreparer(private val context:Context,private val gate:ConsentGate) {
         val original=File(directory,"${UUID.randomUUID()}.input")
         val output=File(directory,"${UUID.randomUUID()}.mp4")
         val coroutine=currentCoroutineContext()
+        var decodeRange:TrimRange?=null
         try {
             val storage=context.getSystemService(StorageManager::class.java)
             val allocatable=storage.getAllocatableBytes(storage.getUuidForPath(directory))
@@ -81,6 +99,7 @@ class MediaPreparer(private val context:Context,private val gate:ConsentGate) {
                 if(format.containsKey(MediaFormat.KEY_COLOR_TRANSFER))require(format.getInteger(MediaFormat.KEY_COLOR_TRANSFER) !in listOf(MediaFormat.COLOR_TRANSFER_ST2084,MediaFormat.COLOR_TRANSFER_HLG)) { "Vídeo HDR não é suportado. Grave ou exporte em SDR." }
                 val duration=if(format.containsKey(MediaFormat.KEY_DURATION))format.getLong(MediaFormat.KEY_DURATION)else 0
                 require(duration in 1..600_000_000) { "O vídeo deve ter duração válida de até 10 minutos." }
+                val effectiveTrim=trim?.let { validatedTrimAgainstTrackDuration(it,duration) }
                 val width=format.getInteger(MediaFormat.KEY_WIDTH); val height=format.getInteger(MediaFormat.KEY_HEIGHT)
                 require(width in 2..4096&&height in 2..4096) { "Resolução não suportada." }
                 onPhase("Removendo áudio")
@@ -95,26 +114,29 @@ class MediaPreparer(private val context:Context,private val gate:ConsentGate) {
                     } finally { metadata.release() }
                     val target=muxer.addTrack(format)
                     extractor.selectTrack(videoTrack)
-                    if(trim!=null)extractor.seekTo(trim.startUs,MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    if(effectiveTrim!=null)extractor.seekTo(effectiveTrim.startUs,MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                     muxer.start(); started=true
                     val buffer=ByteBuffer.allocate(8*1024*1024)
                     val info=MediaCodec.BufferInfo()
                     var frames=0
                     val first=extractor.sampleTime
+                    if(effectiveTrim!=null) {
+                        require(first>=0 && first<=effectiveTrim.startUs) { "Intervalo de vídeo inválido." }
+                        decodeRange=TrimRange(effectiveTrim.startUs-first,effectiveTrim.endUs-first)
+                    }
                     while(true) {
                         coroutine.ensureActive(); gate.withConsent { }
                         buffer.clear()
-                        if(trim!=null&&extractor.sampleTime>trim.endUs)break
                         val count=extractor.readSampleData(buffer,0)
                         if(count<0)break
                         require(count<buffer.capacity()) { "Quadro comprimido excede o limite." }
                         info.set(0,count,(extractor.sampleTime-first).coerceAtLeast(0),
                             if(extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC!=0)MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
                         muxer.writeSampleData(target,buffer,info)
-                        val selectedEnd=trim?.endUs?.coerceAtMost(duration)?:duration
+                        val selectedEnd=duration
                         val progress=((extractor.sampleTime-first)*100/(selectedEnd-first).coerceAtLeast(1)).coerceIn(0,99)
                         if(frames%15==0)onPhase("Removendo áudio: $progress%")
-                        frames++; require(frames<=18000) { "Limite de quadros excedido." }
+                        frames++; require(frames<=144000) { "Limite de quadros de origem excedido (240 FPS por 10 minutos)." }
                         extractor.advance()
                     }
                     require(frames>=2) { "Selecione um vídeo, não uma imagem estática." }
@@ -125,7 +147,7 @@ class MediaPreparer(private val context:Context,private val gate:ConsentGate) {
             onPhase("Removendo áudio: 100%")
             VideoSizeLimits.checkSource(output.length())
             gate.withConsent { }
-            return PreparedVideo(output,fileHash(output),source,originalHash,focus)
+            return PreparedVideo(output,fileHash(output),source,originalHash,focus,decodeRange)
         } catch(error:Throwable) {
             output.delete(); throw error
         } finally { original.delete() }

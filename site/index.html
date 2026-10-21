@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
-<meta name="description" content="Pocket Poser is an experimental Android application for video-based 3D skeletal pose data.">
+<meta name="description" content="Pocket Poser is an experimental Android pose viewer with local 33-landmark and remote Nova-77 processing.">
 <title>Pocket Poser — Android pose viewer</title>
 <style>
 :root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#19232e;background:#f6f7f9;font-synthesis:none}
@@ -19,25 +19,26 @@
 <img src="assets/icons/jetpackcompose.svg" alt="Jetpack Compose" title="Jetpack Compose">
 <img src="assets/icons/opencv.svg" alt="OpenCV" title="OpenCV">
 <img src="assets/icons/gradle.svg" alt="Gradle" title="Gradle"><img src="assets/icons/nvidia.svg" alt="NVIDIA" title="NVIDIA Body Pose service">
-<span>Android · Kotlin · Compose · OpenCV · Gradle · NVIDIA Body Pose</span></div></div></header>
+<span>Android · Kotlin · Compose · OpenCV · Gradle · ML Kit · MediaPipe · NVIDIA Body Pose</span></div></div></header>
 <main class="container">
 <section class="hero">
 <div><div class="eyebrow">Experimental Android application</div>
 <h1>Pocket Poser</h1>
-<p>Import a video or record one using the device camera. Review the segment and focus area, prepare the video, inspect the resulting Nova-77 pose sequence in 3D, and export pose data.</p>
+<p>Import or record a single-person video, review the selection and process its pose. Current source offers NVIDIA Nova-77 online and ML Kit or MediaPipe 33-landmark inference locally. Inspect and export pose data.</p>
 <div class="actions"><a id="download" class="button" aria-disabled="true">APK not available</a><a class="button secondary" href="https://github.com/JeanGoetten/Pocket-Poser-App">Source repository</a></div>
 <p id="release-status" class="release-meta" role="status">Experimental APKs are intended for testing only.</p>
+<p class="release-meta">Source: 0.7.0-beta.1. The public APK is still 0.6.0-beta.1 (NVIDIA-only); the new MediaPipe model has not been approved for public APK redistribution.</p>
 </div><figure class="image"><img src="assets/pose-preview.png" alt="Synthetic Nova-77 skeletal pose preview from Pocket Poser">
 <figcaption>Actual Pocket Poser preview using synthetic pose data.</figcaption></figure></section>
 <section class="section" id="process"><h2>Processing sequence</h2><div class="steps">
 <article class="step"><div class="visual"><svg viewBox="0 0 90 90" aria-hidden="true"><rect x="12" y="18" width="66" height="52" rx="8"/><path d="m39 33 21 11-21 12z"/><path d="M20 10h50M20 80h50"/></svg></div><span class="num">01</span><h3>Attach or record</h3><p>Select a local video or record through the Android camera application.</p></article>
 <article class="step"><div class="visual"><svg viewBox="0 0 90 90" aria-hidden="true"><rect x="13" y="16" width="64" height="58" rx="4"/><path d="M26 34h38M26 56h38M31 27v39M59 27v39"/><path d="m38 42 14 7-14 7z"/></svg></div><span class="num">02</span><h3>Review and prepare</h3><p>Choose a time range, optionally set a focus window, and press Next to start preparation.</p></article>
-<article class="step"><div class="visual"><img src="assets/pose-preview.png" alt="Actual Nova-77 synthetic pose rendering"></div><span class="num">03</span><h3>Preview</h3><p>Inspect 3D pose frames. Empty frames and consecutive duplicates can be omitted.</p></article>
+<article class="step"><div class="visual"><img src="assets/pose-preview.png" alt="Actual Nova-77 synthetic pose rendering"></div><span class="num">03</span><h3>Preview</h3><p>Inspect native 33-point offline poses or NVIDIA Nova-77 poses. Occluded points may be approximated.</p></article>
 <article class="step"><div class="visual"><svg viewBox="0 0 90 90" aria-hidden="true"><path d="M25 10h33l10 10v61H25zM58 10v12h10M34 38h26M34 47h26M34 56h17"/><path d="m41 64 7 7 7-7"/></svg></div><span class="num">04</span><h3>Export</h3><p>Save a project or share JSONL pose data, applying selected frame filters.</p></article>
 </div></section>
 <section class="section" id="install"><h2>Install and build</h2><div class="guides">
 <div class="panel"><h3>Install on Android</h3><ol><li>Download the experimental beta APK using the link above when available.</li><li>Open the APK on an Android 8.0+ device with a compatible ARM processor.</li><li>Allow installation from that source when prompted by Android.</li><li>Read the privacy notice. Remote inference requires your own NVIDIA API key and applicable service permissions.</li></ol><p class="small">An offline synthetic preview is available for testing the interface.</p></div>
-<div class="panel"><h3>Build from source</h3><p>Requires JDK 17, Android SDK Platform 35 and Build Tools 35.0.0. Set ANDROID_HOME to the SDK directory.</p>
+<div class="panel"><h3>Build from source</h3><p>Requires JDK 17, Android SDK Platform 35 and Build Tools 35.0.0. Set ANDROID_HOME to the SDK directory. The 0.7.0 source also requires acquiring and verifying the MediaPipe Lite model separately; follow <a href="https://github.com/JeanGoetten/Pocket-Poser-App/blob/main/docs/MODELS.md">model setup</a> before building.</p>
 <p class="small">Windows / PowerShell</p><pre>git clone https://github.com/JeanGoetten/Pocket-Poser-App.git
 cd Pocket-Poser-App
 .\gradlew.bat :app:assembleDebug</pre>
@@ -47,8 +48,8 @@ cd Pocket-Poser-App
 <p class="small">Output: <code>app/build/outputs/apk/debug/app-debug.apk</code>. Debug builds are for testing only, not production use.</p></div>
 </div></section>
 <section class="section limitations" id="limitations"><h2>Current limitations</h2>
-<p>Single-person tracking is experimental. Processing runs partly on the device and partly through NVIDIA Body Pose using a user-provided account. Video processing can incur provider charges. The JSONL export contains pose data, not an animated video.</p>
-<p>The public download is enabled only when a public GitHub Release contains an APK. Check <a href="https://github.com/JeanGoetten/Pocket-Poser-App">the repository</a> for the source, license and privacy documentation.</p></section>
+<p>Single-person tracking is experimental. Offline ML Kit and MediaPipe run pose inference on the device, while NVIDIA Nova-77 requires a user-provided key and remote authorization. Third-party SDKs may separately process diagnostic or usage metrics. The public 0.6.0 APK predates the new offline modes. Pose data is not a calibrated Unity-ready animated rig.</p>
+<p>The download points to the latest public GitHub Release with an APK. Version 0.7.0 is currently source-only: the exact MediaPipe Lite model redistribution terms and privacy/telemetry review remain pending. Check <a href="https://github.com/JeanGoetten/Pocket-Poser-App">the repository</a> for source, model setup and licensing.</p></section>
 </main><footer class="footer"><div class="container"><a href="https://github.com/JeanGoetten/Pocket-Poser-App">Repository</a><a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial 1.0.0</a><a href="https://github.com/JeanGoetten/Pocket-Poser-App/blob/main/docs/PRIVACY.md">Privacy overview</a><p>Independent experimental project. Names and logos of third parties belong to their respective owners.</p></div></footer>
 <script>
 (async function(){

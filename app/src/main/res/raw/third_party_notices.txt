@@ -1,11 +1,9 @@
-# Third-party notices
+# Componentes e atribuições — Pocket Poser
 
-## NVIDIA-derived interfaces and Nova-77 hierarchy (MIT)
+## Dados e interfaces NVIDIA (MIT)
 
-The Nova-77 parent hierarchy in `Nova77.parents` and the Android protobuf interfaces in `app/src/main/proto` are derived from the `body-pose` directory of NVIDIA-Maxine/nim-clients, commit `d02b7d57541b8598ac4c057947b10b2e42ccb1ee`:
-https://github.com/NVIDIA-Maxine/nim-clients/tree/d02b7d57541b8598ac4c057947b10b2e42ccb1ee/body-pose
+A hierarquia Nova-77 em `Nova77.parents`/`animation/rig.py` e as interfaces protobuf em `gateway/nvidia`/`gateway/protos`/`app/src/main/proto` vêm de **NVIDIA-Maxine/nim-clients**, diretório `body-pose`, commit **d02b7d57541b8598ac4c057947b10b2e42ccb1ee**. Fonte: https://github.com/NVIDIA-Maxine/nim-clients/tree/d02b7d57541b8598ac4c057947b10b2e42ccb1ee/body-pose.
 
-The original client license follows.
 Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -14,21 +12,37 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-The client license does not grant access to NVIDIA services or models and does not replace the account terms. No NVIDIA model weights, NVIDIA sample videos, images of real individuals, MediaPipe models or Godot source are included. The demonstration fixtures are synthetic and are labeled as such.
-## Android dependencies
+Essa licença do cliente não concede acesso ao serviço/modelo NVIDIA nem substitui os termos da conta. Nenhum peso NVIDIA, vídeo de amostra NVIDIA, asset de pessoa real ou código Godot foi incorporado. O modo experimental inclui o arquivo de modelo MediaPipe Pose Landmarker Lite no APK. Sua proveniência e hash estão documentados abaixo. A T-pose e as fixtures demonstrativas foram criadas para este projeto e são rotuladas como sintéticas.
 
-| Component | License |
-|---|---|
-| Kotlin, Kotlin coroutines, AndroidX Compose, Activity, Lifecycle, Media3, Android Gradle Plugin, Gradle | Apache-2.0 |
-| OpenCV Android | Apache-2.0 and applicable transitive notices |
-| gRPC Java, protobuf lite | Apache-2.0 / BSD-3-Clause |
-| JUnit | EPL-1.0 |
-| Robolectric | MIT |
-| AndroidX Test, Espresso, MockWebServer | Apache-2.0 |
+## Dependências diretas e ferramentas
 
-Dependencies must retain their upstream notices. Android SDK and JDK are separate tools with their own terms. NVIDIA services and API accounts have separate terms. The app does not bundle FFmpeg, NVIDIA service/model weights, or Godot source.
+| Componente | Uso | Licença declarada pelo projeto |
+|---|---|---|
+| Kotlin 2.0.21, coroutines 1.9.0 | Aplicativo/compilação | Apache-2.0 |
+| AndroidX Activity 1.9.3, Lifecycle 2.8.7, Compose BOM 2024.12.01 | UI/câmera | Apache-2.0 |
+| AndroidX Media3 ExoPlayer 1.5.1 | Reprodução local com intervalo e TextureView | Apache-2.0 |
+| AGP 8.7.3 / Gradle 8.9 | Build e Wrapper | Apache-2.0 |
+| JUnit 4.13.2 | Testes locais | EPL-1.0 |
+| Robolectric 4.14.1 | Android na JVM | MIT |
+| AndroidX Test / Espresso e MockWebServer 4.12.0 | Testes | Apache-2.0 |
+| FastAPI 0.143.1 | API local | MIT |
+| Starlette 1.8.0 / Uvicorn 0.34.0 | HTTP/ASGI | BSD-3-Clause |
+| gRPC Java/Python 1.67.1 / protobuf Java lite 3.25.5 e Python 5.29.6 | Protocolo | Apache-2.0 / BSD-3-Clause |
+| NumPy 1.26.4 / SciPy 1.15.1 | Álgebra/atribuição experimental | BSD-3-Clause |
+| OpenCV Android 4.11.0 / Python 4.11.0.86 | Detector HOG CPU | Apache-2.0 e avisos transitivos do pacote |
+| Google ML Kit Pose Detection 18.0.0-beta5 | Inferência local de 33 landmarks | Verificar licença do SDK, avisos e termos de distribuição |
+| Google MediaPipe Tasks Vision 0.10.35 | Inferência local de 33 landmarks | SDK Apache-2.0; verificar licenças e avisos transitivos |
+| MediaPipe Pose Landmarker Lite float16, v1 | Modelo empacotado de 5.777.746 bytes, offline | Modelo obtido de https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task ; SHA-256 59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a. Revisar termos da redistribuição antes de publicar |
+| Three.js 0.172.0 | Consumidor independente de animação para QA | MIT |
+| glTF Validator 2.0.0-dev.3.10 | Validação Khronos para QA | Apache-2.0 |
 
-The following reproduced license texts are provided for applicable third-party components. Their inclusion does not change the noncommercial license applicable to the project's own code.
+FFmpeg/FFprobe são ferramentas externas do gateway, não incorporadas ao APK. O build Debian consultado habilita componentes GPL, incluindo libx264; suas licenças/copyrights permanecem nos pacotes da imagem. JDK e Android SDK também são ferramentas externas com seus próprios termos.
+
+Versões completas Python em `gateway/requirements.lock`; ferramentas Node em `tools/validation/package-lock.json`; Android em `app/build.gradle.kts`. Este inventário não substitui revisão de licenças transitivas/SBOM e termos antes de distribuição pública. Não estabelece licença para o código próprio do proprietário.
+
+
+O APK inclui OpenCV Android (HOG e conversão de pixels), gRPC Java com transporte OkHttp e protobuf-lite. Não inclui FFmpeg. Os arquivos proto Android são cópias das mesmas interfaces NVIDIA MIT acima.
+
 ## Apache License 2.0
 
 
@@ -235,7 +249,7 @@ The following reproduced license texts are provided for applicable third-party c
    limitations under the License.
 
 
-## Protobuf — BSD license
+## Protobuf — licença BSD
 
 Copyright 2008 Google Inc.  All rights reserved.
 
