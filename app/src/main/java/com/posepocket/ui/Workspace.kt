@@ -99,7 +99,7 @@ fun Workspace(model:PocketViewModel) {
         state.message?.let { InlineNotice(it,NoticeTone.INFO,model::dismissNotice) }
         when {
             state.review!=null -> ReviewHost(model,requireNotNull(state.review))
-            state.busy&&state.clip==null -> ProcessingScreen(state.phase,state.stage,canCancel=state.stage!=null,onCancel={model.cancel()},progress=state.progress,offline=state.engine.offline)
+            state.busy&&state.clip==null -> ProcessingScreen(state.phase,state.stage,canCancel=state.stage!=null,onCancel={model.cancel()},progress=state.progress)
             state.clip!=null -> {
                 val clip=requireNotNull(state.clip)
                 if(state.busy){Text(state.phase);LinearProgressIndicator(Modifier.fillMaxWidth())}
@@ -142,11 +142,7 @@ fun Workspace(model:PocketViewModel) {
                     }
                     catch(_:Exception){model.report(context.getString(R.string.consent_invalid_review))}
                 },enabled=!state.busy,extras={
-                    if(clip.generator!="NVIDIA"&&!clip.demo) {
-                        Text(stringResource(R.string.engine_uncalibrated_preview),
-                            style=MaterialTheme.typography.bodySmall,
-                            color=MaterialTheme.colorScheme.error)
-                    }else if(state.editing)EditControls(model,!state.busy)
+                    if(state.editing)EditControls(model,!state.busy)
                     else TextButton(enabled=!state.busy,onClick=model::startEditing){Text(stringResource(R.string.enable_advanced_edit))}
                     clip.correctionLayer?.let { layer -> TextButton(enabled=!state.busy,onClick={scope.launch {
                     try {
@@ -177,7 +173,6 @@ fun Workspace(model:PocketViewModel) {
                     }
                 },
                 onKey={nvidiaSettings=true},onDemo={model.demo()},onLibrary={model.showLibrary(true)},
-                engine=state.engine,onEngineChange=model::chooseEngine,
             )
         }
     }

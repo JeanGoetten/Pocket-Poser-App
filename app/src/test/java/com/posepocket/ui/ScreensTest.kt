@@ -16,7 +16,6 @@ import com.posepocket.ProcessingStage
 import com.posepocket.ProcessingProgress
 import com.posepocket.ProcessingSubstep
 import com.posepocket.pose.SavedProject
-import com.posepocket.pose.ProcessingEngine
 import com.posepocket.ui.theme.PocketPoserTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -55,16 +54,14 @@ class ScreensTest {
             compose.onNodeWithTag("entry_record").fetchSemanticsNode().boundsInRoot.top)
     }
 
-    @Test fun selectedEngineCanBeChangedWithoutStartingAnUpload() {
-        var selected:ProcessingEngine?=null
+    @Test fun entryOffersOnlyNvidiaAndKeepsKeyAccess() {
         compose.setContent { PocketPoserTheme {
-            EntryScreen(true,true,true,0,{},{},{},{},{},
-                engine=ProcessingEngine.NVIDIA,onEngineChange={selected=it})
+            EntryScreen(true,true,true,0,{},{},{},{},{})
         } }
-        compose.onNodeWithTag("engine_mediapipe").performScrollTo().performClick()
-        assertEquals(ProcessingEngine.MEDIAPIPE,selected)
-        compose.onNodeWithTag("engine_ml_kit").performScrollTo().performClick()
-        assertEquals(ProcessingEngine.ML_KIT,selected)
+        compose.onNodeWithTag("entry_key").assertExists()
+        compose.onNodeWithTag("entry_engine_picker").assertDoesNotExist()
+        compose.onNodeWithTag("engine_mediapipe").assertDoesNotExist()
+        compose.onNodeWithTag("engine_ml_kit").assertDoesNotExist()
     }
 
     @Test fun recordIsDisabledWithoutCameraAppButAttachStillWorks() {

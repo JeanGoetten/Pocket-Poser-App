@@ -73,8 +73,6 @@ fun PosePreview(clip:PoseClip,saved:Boolean,onSave:()->Unit,onDiscard:()->Unit,o
     val neutral=remember(neutralPose) { ViewportFit.from(neutralPose.asSequence()) }
     val actual=if(tPose||sourceFrame==null)null else continuity.at(sourceFrame,smooth)
     val pose=if(tPose)neutralPose else actual?.joints
-    val mask=if(tPose)null else actual?.visibility
-    val confidence=if(tPose)null else actual?.confidence
     val bounds=if(tPose)neutral else fit
     // Camera orbit/zoom redraws the same pose; transform joints only when pose/bounds change.
     val points=remember(pose,bounds,clip.demo,tPose,clip.generator) {
@@ -112,8 +110,7 @@ fun PosePreview(clip:PoseClip,saved:Boolean,onSave:()->Unit,onDiscard:()->Unit,o
                         {menu=false;onFiltersChange(clip.frameFilters.copy(removeDuplicates=!clip.frameFilters.removeDuplicates))},
                         trailingIcon={if(clip.frameFilters.removeDuplicates)Glyph(PocketIcons.Check,null)})
                     DropdownMenuItem({Text(stringResource(R.string.result_details))},{menu=false;details=true})
-                    if(clip.generator=="NVIDIA"||clip.demo)
-                        DropdownMenuItem({Text(stringResource(R.string.tpose))},
+                    DropdownMenuItem({Text(stringResource(R.string.tpose))},
                             {menu=false;tPose=!tPose;playing=false})
                     DropdownMenuItem({Text(stringResource(R.string.camera_reset))},{menu=false;camera=ViewCamera(pitch=.12f,zoom=.86f)})
                     DropdownMenuItem({Text(stringResource(R.string.redo))},{menu=false;onRedo()})
@@ -133,7 +130,7 @@ fun PosePreview(clip:PoseClip,saved:Boolean,onSave:()->Unit,onDiscard:()->Unit,o
                     val panUp=stringResource(R.string.pan_up);val panDown=stringResource(R.string.pan_down)
                     val tiltUp=stringResource(R.string.tilt_up);val tiltDown=stringResource(R.string.tilt_down)
                     val zoomState=stringResource(R.string.camera_zoom_state,(camera.zoom*100).roundToInt())
-                    StageCanvas(points,camera,body,mask,confidence,Modifier.fillMaxWidth().weight(if(multi)2f else 1f)
+                    StageCanvas(points,camera,body,Modifier.fillMaxWidth().weight(if(multi)2f else 1f)
                         .pointerInput(id){detectTapGestures(onDoubleTap={camera=ViewCamera(pitch=.12f,zoom=.86f)})}
                         .pointerInput(id){awaitEachGesture {
                             awaitFirstDown(requireUnconsumed=false)
@@ -161,8 +158,8 @@ fun PosePreview(clip:PoseClip,saved:Boolean,onSave:()->Unit,onDiscard:()->Unit,o
                                 CustomAccessibilityAction(panDown){camera=camera.copy(panY=(camera.panY-.2f).coerceIn(-3f,3f));true})
                         })
                     if(multi)Row(Modifier.fillMaxWidth().weight(1f),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
-                        StageCanvas(points,ViewCamera(pitch=.08f,zoom=.8f),body,mask,confidence,Modifier.weight(1f).fillMaxHeight())
-                        StageCanvas(points,ViewCamera(yaw=(PI/2).toFloat(),pitch=.08f,zoom=.8f),body,mask,confidence,Modifier.weight(1f).fillMaxHeight())
+                        StageCanvas(points,ViewCamera(pitch=.08f,zoom=.8f),body,Modifier.weight(1f).fillMaxHeight())
+                        StageCanvas(points,ViewCamera(yaw=(PI/2).toFloat(),pitch=.08f,zoom=.8f),body,Modifier.weight(1f).fillMaxHeight())
                     }
                 }
                 val badge=when{tPose->stringResource(R.string.status_tpose);actual?.interpolated==true->stringResource(R.string.interpolated_short);pose==null->stringResource(R.string.no_pose_short);else->null}
@@ -170,10 +167,6 @@ fun PosePreview(clip:PoseClip,saved:Boolean,onSave:()->Unit,onDiscard:()->Unit,o
             }
         }
         val controls: @Composable ()->Unit = {
-            if(!expanded && clip.generator=="MEDIAPIPE")
-                Text(stringResource(R.string.preview_mediapipe_occluded_note),
-                    style=MaterialTheme.typography.labelSmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(!expanded)Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 FilterChip(body,{body=true},{Text(stringResource(R.string.view_body))},Modifier.testTag("view_body"))
                 FilterChip(!body,{body=false},{Text(stringResource(R.string.view_skeleton))},Modifier.testTag("view_skeleton"))
@@ -235,7 +228,7 @@ fun PosePreview(clip:PoseClip,saved:Boolean,onSave:()->Unit,onDiscard:()->Unit,o
 
 @Composable
 private fun StageCanvas(joints:List<Vec3>?,camera:ViewCamera,body:Boolean,
-    mask:List<Boolean>?,confidence:List<Float?>?,modifier:Modifier) {
+    modifier:Modifier) {
     val colors=PocketTheme.extras
-    Canvas(modifier.clip(RoundedCornerShape(12.dp))){drawStage(camera,joints,if(body)StageMode.MANNEQUIN else StageMode.SKELETON,colors,mask,confidence)}
+    Canvas(modifier.clip(RoundedCornerShape(12.dp))){drawStage(camera,joints,if(body)StageMode.MANNEQUIN else StageMode.SKELETON,colors)}
 }

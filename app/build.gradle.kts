@@ -1,5 +1,4 @@
 import com.google.protobuf.gradle.*
-import java.security.MessageDigest
 
 plugins {
     id("com.google.protobuf")
@@ -17,16 +16,16 @@ android {
         minSdk = 26
         targetSdk = 35
         ndk { abiFilters += providers.gradleProperty("poseAbis").orElse("arm64-v8a,armeabi-v7a").get().split(",") }
-        versionCode = 16
-        versionName = "0.7.0-beta.1"
+        versionCode = 17
+        versionName = "0.8.0"
         manifestPlaceholders["poseDisplayLabel"]="@string/app_name"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // Local reviewers can coexist with APKs signed on another development machine.
     buildTypes { getByName("debug") {
         applicationIdSuffix = providers.gradleProperty("poseApplicationIdSuffix").orElse(".debug").get()
-        versionNameSuffix="-pose33-dev"
-        manifestPlaceholders["poseDisplayLabel"]="Pocket Poser Dev 33"
+        versionNameSuffix="-dev"
+        manifestPlaceholders["poseDisplayLabel"]="Pocket Poser Preview"
     } }
     // ML Kit is the new local tracking baseline; -PposeDetectorMlKit=false re-enables HOG for QA.
     buildTypes.getByName("debug").buildConfigField(
@@ -49,7 +48,6 @@ dependencies {
     implementation("io.grpc:grpc-stub:1.67.1")
     implementation("org.opencv:opencv:4.11.0")
     implementation("com.google.mlkit:pose-detection:18.0.0-beta5")
-    implementation("com.google.mediapipe:tasks-vision:0.10.35")
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     compileOnly("javax.annotation:javax.annotation-api:1.3.2")
     testImplementation("io.grpc:grpc-inprocess:1.67.1")
@@ -89,30 +87,3 @@ protobuf {
         }
     }
 }
-
-
-// The MediaPipe model bundle is deliberately excluded from the public source.
-// Developers must obtain it from its official URL and verify the fixed digest
-// before building. This task is not a grant of redistribution rights.
-tasks.register("verifyPoseLandmarkerAsset") {
-    doLast {
-        val asset = file("src/main/assets/pose_landmarker_lite.task")
-        check(asset.isFile) {
-            "Missing MediaPipe Lite model. Follow docs/MODELS.md before compiling."
-        }
-        val digest = MessageDigest.getInstance("SHA-256")
-        asset.inputStream().use { stream ->
-            val buffer = ByteArray(65536)
-            while (true) {
-                val length = stream.read(buffer)
-                if (length < 0) break
-                digest.update(buffer, 0, length)
-            }
-        }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
-        check(actual == "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a") {
-            "MediaPipe Lite model digest mismatch; do not build with an unknown model."
-        }
-    }
-}
-tasks.named("preBuild") { dependsOn("verifyPoseLandmarkerAsset") }

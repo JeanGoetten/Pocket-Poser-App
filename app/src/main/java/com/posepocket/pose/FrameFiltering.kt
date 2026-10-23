@@ -21,19 +21,17 @@ data class FrameFilters(
 fun filteredFrameIds(frames: List<PoseFrame>, filters: FrameFilters): List<Int> {
     val selected = ArrayList<Int>(frames.size)
     var previous: List<Vec3>? = null
-    var previousVisibility:List<Boolean>?=null
     for (frame in frames.sortedBy { it.id }) {
         val pose = frame.joints
         if (pose == null) {
             if (!filters.hideEmpty) {
                 selected.add(frame.id)
                 previous = null
-                previousVisibility=null
             }
             continue
         }
         val duplicate = filters.removeDuplicates && previous != null &&
-            pose.size == previous.size && frame.visibility==previousVisibility &&
+            pose.size == previous.size &&
             pose.indices.all { i ->
                 val a = pose[i]; val b = previous[i]
                 abs(a.x - b.x) <= 0.00001f &&
@@ -43,7 +41,6 @@ fun filteredFrameIds(frames: List<PoseFrame>, filters: FrameFilters): List<Int> 
         if (!duplicate) {
             selected.add(frame.id)
             previous = pose
-            previousVisibility=frame.visibility
         }
     }
     return selected

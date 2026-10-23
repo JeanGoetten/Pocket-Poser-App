@@ -72,11 +72,11 @@
     <string name="revoke_button">Revogar autorização</string>
     <string name="licenses_title">Licenças de componentes</string>
     <string name="consent_title">Antes de começar</string>
-    <string name="consent_p1">ML Kit e MediaPipe analisam vídeos localmente. NVIDIA é opcional: o vídeo só é enviado se você autorizar separadamente o processamento remoto e escolher NVIDIA.</string>
-    <string name="consent_p2">Para NVIDIA, é necessária uma chave de API, os termos aplicáveis e autorização explícita. Os modos offline não precisam de chave.</string>
-    <string name="consent_p3">Use somente vídeos autorizados. A reconstrução 3D local é experimental e não está calibrada para rigs.</string>
+    <string name="consent_p1">O Pocket Poser prepara o vídeo localmente. NVIDIA Nova-77 é o único motor que gera poses 3D; o vídeo selecionado só é enviado à NVIDIA mediante sua autorização remota expressa.</string>
+    <string name="consent_p2">A inferência 3D exige sua própria chave de API NVIDIA e aceitação dos termos do provedor. O Google ML Kit é usado apenas para localizar a pessoa no vídeo; o SDK pode realizar comunicações técnicas.</string>
+    <string name="consent_p3">Use somente vídeos autorizados. As poses são estimativas que podem conter erros, e o serviço NVIDIA pode impor cotas ou cobranças próprias.</string>
     <string name="consent_check_notice">Li e compreendi a Política de Privacidade.</string>
-    <string name="consent_check_remote">Opcional: autorizo o envio de vídeos à NVIDIA quando selecionar esse processamento.</string>
+    <string name="consent_check_remote">Opcional: autorizo o envio do vídeo selecionado e metadados de rastreamento à NVIDIA para inferência de pose 3D.</string>
     <string name="accept_continue">Aceitar e continuar</string>
     <string name="decline">Não concordo</string>
     <string name="key_model">Modelo padrão: %1$s</string>
@@ -283,16 +283,8 @@
     <string name="backend_short_trim">Escolha um intervalo com pelo menos dois quadros de saída.</string>
     <string name="backend_source_frames">A origem excede 144.000 amostras de vídeo (240 FPS por dez minutos). Escolha um intervalo menor.</string>
     <string name="backend_old_processing">Este processamento guardado usa formato antigo. Descarte-o e revise o vídeo novamente antes de enviar.</string>
-    <string name="engine_picker_title">Motor de processamento de poses</string>
-    <string name="engine_nvidia">NVIDIA Nova-77 · Online · 77 juntas</string>
-    <string name="engine_mlkit">ML Kit · Offline beta · 33 pontos</string>
-    <string name="engine_mediapipe">MediaPipe · Offline beta · 33 pontos</string>
-    <string name="engine_local_warning">Reconstrução 3D experimental a partir de 33 pontos. Sem chave NVIDIA ou envio. Rotações dos ossos ainda não calibradas para retargeting.</string>
     <string name="engine_remote_warning">A inferência 3D online usa sua chave NVIDIA e envia o vídeo mediante autorização expressa.</string>
     <string name="engine_remote_consent_required">Para usar NVIDIA, autorize o envio remoto de vídeo em Privacidade e permissões.</string>
-    <string name="engine_uncalibrated_preview">Resultado offline experimental: posições 3D aproximadas. Rotações ósseas ainda não calibradas para Unity ou edição avançada.</string>
-    <string name="engine_uncalibrated_edit">A edição avançada exige um rig calibrado. Resultados locais de 33 pontos ainda não são suportados.</string>
     <string name="engine_remote_permission_hint">O processamento NVIDIA não está autorizado. Você pode ativá-lo separadamente abaixo.</string>
     <string name="engine_remote_permission_enable">Autorizar processamento remoto NVIDIA</string>
-    <string name="preview_mediapipe_occluded_note">Membros tracejados são estimativas de baixa visibilidade, não pontos observados com segurança.</string>
 </resources>

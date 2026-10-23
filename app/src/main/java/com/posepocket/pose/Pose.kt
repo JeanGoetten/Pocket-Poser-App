@@ -46,20 +46,8 @@ object Nova77 {
     }
 }
 
-data class PoseFrame(
-    val id:Int,
-    val joints:List<Vec3>?,
-    /** Validity per native landmark. null means all joints are observed (Nova-77). */
-    val visibility:List<Boolean>?=null,
-    /** Local Pose33 visibility confidence; distinct from presence/validity. */
-    val confidence:List<Float?>?=null,
-) {
-    init {
-        require(joints==null||joints.size==77||joints.size==33)
-        require(visibility==null||(joints?.size==33&&visibility.size==33))
-        require(confidence==null||(joints?.size==33&&confidence.size==33&&
-            confidence.all{it==null||(it.isFinite()&&it in 0f..1f)}))
-    }
+data class PoseFrame(val id:Int,val joints:List<Vec3>?) {
+    init { require(joints==null||joints.size==77) }
 }
 data class PoseClip(
     val raw: File, val frames: List<PoseFrame>, val fpsNumerator: Int, val fpsDenominator: Int,
@@ -84,57 +72,14 @@ fun fileHash(file: File): String {
 fun readClip(raw: File, fpsNum: Int, fpsDen: Int, frameCount: Int, demo: Boolean, source: String, hash: String?): PoseClip {
     require(raw.length() in 1..64_000_000 && fpsNum>0 && fpsDen>0 && fpsNum.toDouble()/fpsDen in 1.0..60.0 && frameCount in 2..18000)
     val ids=HashSet<Int>()
-    var generator="NVIDIA"
     val frames=raw.useLines { lines -> lines.map { line ->
         require(line.length<=256_000) { "Quadro de resultado muito grande." }
         val json=JSONObject(line)
-        if(json.optString("provenance").startsWith("local-")) {
-            val expected=json.optString("provenance")
-            generator=when {
-                expected.startsWith("local-ml_kit-")->"ML_KIT"
-                expected.startsWith("local-mediapipe-")->"MEDIAPIPE"
-                else->error("Proveniência de modelo local desconhecida.")
-            }
-        }
+        require(!json.optString("provenance").startsWith("local-")) { "Unsupported obsolete local pose format." }
         require(json.get("frame_id") is Number&&json.getDouble("frame_id")==json.getInt("frame_id").toDouble())
         val id=json.getInt("frame_id")
         require(demo||!json.optString("provenance").startsWith("synthetic")) { "Demonstração sintética não pode ser apresentada como inferência real." }
         require(id in 0 until frameCount && ids.add(id)) { "Quadro inválido ou duplicado." }
-        if(generator!="NVIDIA") {
-            // Native 33-point frames are never parsed as Nova-77.
-            // Older local results had fabricated 77-point output. Read their
-            // preserved source_landmarks_33 instead, without migrating raw data.
-            val native=json.optJSONArray("landmarks_33")
-                ?:json.optJSONArray("source_landmarks_33")
-                ?:error("Quadro local sem os 33 landmarks originais.")
-            require(native.length()==33) { "Pose local deve conter 33 pontos." }
-            val valid=(0..32).map{!native.isNull(it)}
-            val points=(0..32).map { index ->
-                if(!valid[index]) Vec3(0f,0f,0f) else {
-                    val xyz=native.getJSONArray(index)
-                    require(xyz.length()==3)
-                    Vec3(xyz.getDouble(0).toFloat(),
-                        xyz.getDouble(1).toFloat(),
-                        xyz.getDouble(2).toFloat()).also {
-                        require(it.x.isFinite()&&it.y.isFinite()&&it.z.isFinite()&&it.norm()<10000)
-                    }
-                }
-            }
-            val confidence=json.optJSONArray("landmark_visibility_33")?.let { scores ->
-                require(scores.length()==33)
-                (0..32).map { index ->
-                    if(scores.isNull(index))null
-                    else scores.getDouble(index).toFloat().also{
-                        require(it.isFinite() && it in 0f..1f)
-                    }
-                }
-            }
-            val originalHasPose=if(json.has("has_pose"))json.getBoolean("has_pose")
-                else json.optJSONArray("detections")?.length()==1
-            val usable=originalHasPose&&Pose33.hasBody(valid)
-            return@map PoseFrame(id,if(usable)points else null,
-                if(usable)valid else null,if(usable)confidence else null)
-        }
         val detections=json.getJSONArray("detections")
         require(detections.length()<=1) { "Resultado deve conter uma pessoa." }
         val joints=if(detections.length()==0) null else {
@@ -169,7 +114,7 @@ fun readClip(raw: File, fpsNum: Int, fpsDen: Int, frameCount: Int, demo: Boolean
     }.toList() }.sortedBy { it.id }
     require(frames.size==frameCount) { "Resultado incompleto: faltam quadros da animação." }
     require(frames.any { it.joints!=null }) { "Resultado sem poses." }
-    return PoseClip(raw,frames,fpsNum,fpsDen,frameCount,demo,source,hash,generator=generator)
+    return PoseClip(raw,frames,fpsNum,fpsDen,frameCount,demo,source,hash)
 }
 
 fun syntheticDemo(file: File): PoseClip {

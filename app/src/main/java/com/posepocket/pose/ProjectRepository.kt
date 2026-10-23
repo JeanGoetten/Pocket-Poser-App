@@ -26,7 +26,7 @@ class ProjectRepository(private val root:File) {
                 .put("demo",clip.demo).put("input_source",clip.inputSource).put("input_sha256",clip.inputHash?:JSONObject.NULL)
                 .put("source_sha256",clip.sourceHash?:JSONObject.NULL)
                 .put("raw_sha256",fileHash(raw)).put("fps_numerator",clip.fpsNumerator).put("fps_denominator",clip.fpsDenominator)
-                .put("frame_count",clip.frameCount).put("skeleton",if(clip.generator=="NVIDIA")"Nova-77" else "pose-landmarks-33")
+                .put("frame_count",clip.frameCount).put("skeleton","Nova-77")
                 .put("generator",clip.generator)
                 .put("hide_empty_frames",clip.frameFilters.hideEmpty).put("remove_duplicate_frames",clip.frameFilters.removeDuplicates)
             clip.correctionLayer?.let { layer->

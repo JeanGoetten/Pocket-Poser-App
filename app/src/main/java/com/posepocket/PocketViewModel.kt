@@ -32,7 +32,6 @@ data class PocketState(
     val review:ReviewVideo?=null,
     val tracking:TrackingSummary?=null,
     val previewIdentity:String?=null,
-    val engine:ProcessingEngine=ProcessingEngine.NVIDIA,
 )
 
 class PocketViewModel @JvmOverloads constructor(application:Application,
@@ -60,11 +59,7 @@ class PocketViewModel @JvmOverloads constructor(application:Application,
     val keyConfigured=_keyConfigured.asStateFlow()
     private val _initialized=MutableStateFlow(false)
     val initialized=_initialized.asStateFlow()
-    private val preferences=application.getSharedPreferences("pose-engine-lab",0)
-    private val initialEngine=runCatching {
-        ProcessingEngine.valueOf(preferences.getString("engine",ProcessingEngine.NVIDIA.name)!!)
-    }.getOrDefault(ProcessingEngine.NVIDIA)
-    private val _state=MutableStateFlow(PocketState(engine=initialEngine))
+    private val _state=MutableStateFlow(PocketState())
     val state=_state.asStateFlow()
     private var work:Job?=null
     @Volatile private var trimRange:TrimRange?=null
@@ -112,12 +107,6 @@ class PocketViewModel @JvmOverloads constructor(application:Application,
         beginProcessing(uri,source,trim,focus)
     }
 
-    fun chooseEngine(engine:ProcessingEngine) {
-        if(_state.value.busy||_state.value.recovery!=null||_state.value.review!=null)return
-        preferences.edit().putString("engine",engine.name).apply()
-        _state.update { it.copy(engine=engine,error=null) }
-    }
-
     fun retryProcessing() {
         if(_state.value.busy || _state.value.recovery==null)return
         beginProcessing(null,null,null,null)
@@ -129,8 +118,9 @@ class PocketViewModel @JvmOverloads constructor(application:Application,
             report(context.getString(R.string.consent_review))
             return
         }
-        val engine=if(uri==null)ProcessingEngine.NVIDIA else _state.value.engine
-        if(engine==ProcessingEngine.NVIDIA && !gate.isRemoteAllowed()) {
+        // Every real-video inference uses NVIDIA. Remote consent is mandatory
+        // Remote permission cannot be bypassed by an earlier installation.
+        if(!gate.isRemoteAllowed()) {
             report(context.getString(R.string.engine_remote_consent_required))
             return
         }
@@ -146,24 +136,11 @@ class PocketViewModel @JvmOverloads constructor(application:Application,
                     updatePhase(message,current)
                 }
                 val clip=withContext(Dispatchers.IO) {
-                    val result=if(engine.offline) {
-                        val selectedUri=requireNotNull(uri)
-                        val selectedSource=requireNotNull(source)
-                        val prepared=MediaPreparer(context,gate).prepare(selectedUri,selectedSource,trim,focus) { phase(it) }
-                        try {
-                            val encoded=DeviceVideoPipeline(gate).normalizeVideo(prepared) { phase(it) }
-                            try {
-                                OfflinePoseGenerator(context,gate).infer(encoded,engine,selectedSource,
-                                    prepared.originalHash,phase)
-                            }finally{encoded.file.delete()}
-                        }finally{prepared.file.delete()}
-                    }else {
-                        processing.run(uri,source,phase) { stage ->
-                            checkpointCommitted=true
-                            releaseReviewGrant()
-                            reviewDraft.clear()
-                            if(current==generation)_state.update { it.copy(recovery=stage) }
-                        }
+                    val result=processing.run(uri,source,phase) { stage ->
+                        checkpointCommitted=true
+                        releaseReviewGrant()
+                        reviewDraft.clear()
+                        if(current==generation)_state.update { it.copy(recovery=stage) }
                     }
                     // Commit before crossing the cancellable IO→UI boundary.
                     val saved=withContext(NonCancellable) { completed.save(result).also { pending.clear() } }
@@ -355,10 +332,6 @@ class PocketViewModel @JvmOverloads constructor(application:Application,
         viewModelScope.launch { _keyConfigured.value=withContext(Dispatchers.IO){keyStore.read()!=null} }
     }
     fun startEditing() {
-        if(_state.value.clip?.generator!="NVIDIA") {
-            report(context.getString(R.string.engine_uncalibrated_edit))
-            return
-        }
         edit(context.getString(R.string.phase_validate_fk),false){}
     }
     fun rotateJoint(joint:Int,start:Int,end:Int,degrees:Float,endDegrees:Float?)=edit(context.getString(R.string.phase_apply_keys),true) {
@@ -370,7 +343,6 @@ class PocketViewModel @JvmOverloads constructor(application:Application,
     private fun edit(phase:String,dirty:Boolean,action:(PoseEditor)->Unit) {
         val clip=_state.value.clip?:return
         if(_state.value.busy)return
-        if(clip.generator!="NVIDIA") { report(context.getString(R.string.engine_uncalibrated_edit));return }
         val current=generation
         _state.update { it.copy(busy=true,phase=phase,error=null) }
         work=viewModelScope.launch {

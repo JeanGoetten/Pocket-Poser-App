@@ -12,7 +12,7 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-Essa licença do cliente não concede acesso ao serviço/modelo NVIDIA nem substitui os termos da conta. Nenhum peso NVIDIA, vídeo de amostra NVIDIA, asset de pessoa real ou código Godot foi incorporado. O modo experimental inclui o arquivo de modelo MediaPipe Pose Landmarker Lite no APK. Sua proveniência e hash estão documentados abaixo. A T-pose e as fixtures demonstrativas foram criadas para este projeto e são rotuladas como sintéticas.
+Essa licença do cliente não concede acesso ao serviço/modelo NVIDIA nem substitui os termos da conta. Nenhum peso NVIDIA, vídeo de amostra NVIDIA, asset de pessoa real ou código Godot foi incorporado. A T-pose e as fixtures demonstrativas foram criadas para este projeto e são rotuladas como sintéticas.
 
 ## Dependências diretas e ferramentas
 
@@ -30,9 +30,7 @@ Essa licença do cliente não concede acesso ao serviço/modelo NVIDIA nem subst
 | gRPC Java/Python 1.67.1 / protobuf Java lite 3.25.5 e Python 5.29.6 | Protocolo | Apache-2.0 / BSD-3-Clause |
 | NumPy 1.26.4 / SciPy 1.15.1 | Álgebra/atribuição experimental | BSD-3-Clause |
 | OpenCV Android 4.11.0 / Python 4.11.0.86 | Detector HOG CPU | Apache-2.0 e avisos transitivos do pacote |
-| Google ML Kit Pose Detection 18.0.0-beta5 | Inferência local de 33 landmarks | Verificar licença do SDK, avisos e termos de distribuição |
-| Google MediaPipe Tasks Vision 0.10.35 | Inferência local de 33 landmarks | SDK Apache-2.0; verificar licenças e avisos transitivos |
-| MediaPipe Pose Landmarker Lite float16, v1 | Modelo empacotado de 5.777.746 bytes, offline | Modelo obtido de https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task ; SHA-256 59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a. Revisar termos da redistribuição antes de publicar |
+| Google ML Kit Pose Detection 18.0.0-beta5 | Detecção local da pessoa para preparar a inferência NVIDIA | Verificar licença do SDK, avisos e termos de distribuição |
 | Three.js 0.172.0 | Consumidor independente de animação para QA | MIT |
 | glTF Validator 2.0.0-dev.3.10 | Validação Khronos para QA | Apache-2.0 |
 

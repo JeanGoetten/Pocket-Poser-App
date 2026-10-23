@@ -72,11 +72,11 @@
     <string name="revoke_button">Revoke consent</string>
     <string name="licenses_title">Component licenses</string>
     <string name="consent_title">Before you begin</string>
-    <string name="consent_p1">Offline ML Kit and MediaPipe analyze videos locally. NVIDIA is optional: videos are sent to NVIDIA only if you separately authorize remote processing and choose NVIDIA.</string>
-    <string name="consent_p2">For NVIDIA you need an API key, applicable account terms, and explicit remote authorization. Offline modes do not require a key.</string>
-    <string name="consent_p3">Use only authorized videos. Local 3D reconstruction is experimental and not rig-calibrated.</string>
+    <string name="consent_p1">Pocket Poser prepares video locally. NVIDIA Nova-77 is the only engine that generates 3D poses; selected video is sent to NVIDIA only with your explicit remote authorization.</string>
+    <string name="consent_p2">Real-video 3D processing needs your own NVIDIA API key and acceptance of the provider\'s current terms. Google ML Kit is used locally only for person-box detection; its SDK may perform technical communications.</string>
+    <string name="consent_p3">Use only authorized videos. Skeletal estimates may be inaccurate, and the provider may impose independent quotas or fees.</string>
     <string name="consent_check_notice">I have read and understood the Privacy Policy.</string>
-    <string name="consent_check_remote">Optional: I authorize sending videos to NVIDIA when I select NVIDIA processing.</string>
+    <string name="consent_check_remote">Optional: I authorize sending my selected video and tracking metadata to NVIDIA for 3D pose inference.</string>
     <string name="accept_continue">Accept and continue</string>
     <string name="decline">I do not agree</string>
     <string name="key_model">Default model: %1$s</string>
@@ -282,16 +282,8 @@
     <string name="backend_short_trim">Choose an interval containing at least two output frames.</string>
     <string name="backend_source_frames">The source exceeds 144,000 video samples (240 FPS for ten minutes). Choose a shorter interval.</string>
     <string name="backend_old_processing">This saved processing job uses an older format. Discard it and review the video again before sending.</string>
-    <string name="engine_picker_title">Pose processing engine</string>
-    <string name="engine_nvidia">NVIDIA Nova-77 · Online · 77 joints</string>
-    <string name="engine_mlkit">ML Kit · Offline beta · 33 landmarks</string>
-    <string name="engine_mediapipe">MediaPipe · Offline beta · 33 landmarks</string>
-    <string name="engine_local_warning">Experimental 3D reconstruction from 33 landmarks. No NVIDIA key or upload. Bone rotations are not calibrated for retargeting.</string>
     <string name="engine_remote_warning">Online 3D pose inference uses your NVIDIA API key and explicitly authorized video upload.</string>
     <string name="engine_remote_consent_required">To use NVIDIA, authorize remote video processing in Privacy and permissions.</string>
-    <string name="engine_uncalibrated_preview">Experimental offline result: approximate 3D joint positions. Bone rotations are not calibrated for Unity or advanced editing.</string>
-    <string name="engine_uncalibrated_edit">Advanced editing requires a calibrated rig. Local 33-point results are not yet supported.</string>
     <string name="engine_remote_permission_hint">NVIDIA processing is not enabled. You can opt in separately below.</string>
     <string name="engine_remote_permission_enable">Enable NVIDIA remote processing</string>
-    <string name="preview_mediapipe_occluded_note">Dashed limbs show low-visibility estimates, not confirmed observations.</string>
 </resources>

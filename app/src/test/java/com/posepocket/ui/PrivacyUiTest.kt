@@ -68,7 +68,7 @@ class PrivacyUiTest {
     @Test fun fullPolicyIsReadableWithoutAcceptanceAndChecksReset() {
         launch()
         compose.onNodeWithText("Ler Política de Privacidade").performScrollTo().performClick()
-        compose.onNodeWithText("Pocket Poser — política de desenvolvimento",substring=true).assertExists()
+        compose.onNodeWithText("Pocket Poser — aviso de privacidade de acesso antecipado",substring=true).assertExists()
         assertFalse(gate.isGranted())
         compose.onNodeWithText("Voltar").performScrollTo().performClick()
         compose.onAllNodes(isToggleable())[0].assertIsOff()
